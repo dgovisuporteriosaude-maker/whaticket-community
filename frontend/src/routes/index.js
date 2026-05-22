@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import { BrowserRouter, Switch } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 
@@ -13,6 +13,7 @@ import Users from "../pages/Users";
 import Contacts from "../pages/Contacts/";
 import QuickAnswers from "../pages/QuickAnswers/";
 import Queues from "../pages/Queues/";
+import CustomSettings from "../pages/CustomSettings/";
 import { AuthProvider } from "../context/Auth/AuthContext";
 import { WhatsAppsProvider } from "../context/WhatsApp/WhatsAppsContext";
 import { ThemeProvider } from "../context/DarkMode";
@@ -36,6 +37,7 @@ const Routes = () => {
                 <Route exact path="/quickAnswers" component={QuickAnswers} isPrivate />
                 <Route exact path="/Settings" component={Settings} isPrivate />
                 <Route exact path="/Queues" component={Queues} isPrivate />
+                <Route exact path="/custom-settings" component={CustomSettings} isPrivate />
               </LoggedInLayout>
             </WhatsAppsProvider>
           </Switch>
@@ -47,3 +49,4 @@ const Routes = () => {
 };
 
 export default Routes;
+

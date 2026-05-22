@@ -1,29 +1,4 @@
-﻿
-function shouldIgnoreNonTicketMessage(msg: any): boolean {
-  const from = String(msg?.from || "");
-  const to = String(msg?.to || "");
-  const author = String(msg?.author || "");
-  const id = String(msg?.id?._serialized || msg?.id?.id || "");
-  const raw = `${from} ${to} ${author} ${id}`.toLowerCase();
-
-  const isStatus =
-    from === "status@broadcast" ||
-    to === "status@broadcast" ||
-    raw.includes("status@broadcast");
-
-  const isChannel =
-    raw.includes("@newsletter") ||
-    raw.includes("newsletter");
-
-  const isBroadcast =
-    from.endsWith("@broadcast") ||
-    to.endsWith("@broadcast") ||
-    raw.includes("@broadcast");
-
-  return isStatus || isChannel || isBroadcast;
-}
-
-import qrCode from "qrcode-terminal";
+﻿import qrCode from "qrcode-terminal";
 import {
   Client,
   LocalAuth,
@@ -586,10 +561,6 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     wbot.on("message_create", async msg => {
-      if (shouldIgnoreNonTicketMessage(msg)) {
-        logger.info("Mensagem ignorada: status/canal/broadcast. Origem: ");
-        return;
-      }
       if (!shouldHandleMessage(msg)) return;
 
       try {
@@ -648,5 +619,4 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendSeen,
   fetchChatMessages
 };
-
 

@@ -30,4 +30,3 @@ routes.use(customAdminRoutes);
 
 export default routes;
 
-

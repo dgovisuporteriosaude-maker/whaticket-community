@@ -1,4 +1,4 @@
-﻿import { Sequelize } from "sequelize-typescript";
+import { Sequelize } from "sequelize-typescript";
 import User from "../models/User";
 import Setting from "../models/Setting";
 import Contact from "../models/Contact";
@@ -11,13 +11,6 @@ import WhatsappQueue from "../models/WhatsappQueue";
 import UserQueue from "../models/UserQueue";
 import QuickAnswer from "../models/QuickAnswer";
 import WppKey from "../models/WppKey";
-import TicketCategory from "../models/TicketCategory";
-import ClosingReason from "../models/ClosingReason";
-import UraFlow from "../models/UraFlow";
-import UraOption from "../models/UraOption";
-import AiSetting from "../models/AiSetting";
-import KnowledgeBaseArticle from "../models/KnowledgeBaseArticle";
-
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -43,5 +36,3 @@ const models = [
 sequelize.addModels(models);
 
 export default sequelize;
-
-

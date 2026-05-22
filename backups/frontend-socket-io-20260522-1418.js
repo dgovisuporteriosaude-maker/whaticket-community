@@ -12,4 +12,3 @@ function connectToSocket() {
 }
 
 export default connectToSocket;
-
