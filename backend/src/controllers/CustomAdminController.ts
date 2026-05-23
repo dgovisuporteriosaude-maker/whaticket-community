@@ -29,6 +29,16 @@ function getModel(resource: string): AnyModel {
   return model;
 }
 
+function nullableNumber(value: any): number | null {
+  if (value === "" || value === null || value === undefined || value === 0 || value === "0") {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 function normalizeBody(resource: string, body: any): any {
   const data = { ...body };
 
@@ -61,7 +71,7 @@ function normalizeBody(resource: string, body: any): any {
       welcomeMessage: data.welcomeMessage || "",
       invalidOptionMessage: data.invalidOptionMessage || null,
       maxInvalidAttempts: Number(data.maxInvalidAttempts || 3),
-      fallbackQueueId: data.fallbackQueueId || null,
+      fallbackQueueId: nullableNumber(data.fallbackQueueId),
       active: data.active !== false
     };
   }
@@ -73,7 +83,7 @@ function normalizeBody(resource: string, body: any): any {
       title: data.title,
       responseMessage: data.responseMessage || null,
       action: data.action || "SEND_MESSAGE",
-      targetQueueId: data.targetQueueId || null,
+      targetQueueId: nullableNumber(data.targetQueueId),
       order: Number(data.order || 0),
       active: data.active !== false
     };
@@ -106,14 +116,19 @@ function normalizeBody(resource: string, body: any): any {
 }
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  if (req.user.profile !== "admin") {
+  const { resource } = req.params;
+  const publicLookupResources = ["ticketCategories", "closingReasons"];
+
+  if (req.user.profile !== "admin" && !publicLookupResources.includes(resource)) {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
-  const { resource } = req.params;
   const model = getModel(resource);
 
   const rows = await model.findAll({
+    where: req.user.profile !== "admin" && publicLookupResources.includes(resource)
+      ? { active: true }
+      : undefined,
     order: [["id", "DESC"]]
   });
 

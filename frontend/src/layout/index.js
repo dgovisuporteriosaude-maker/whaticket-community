@@ -25,6 +25,7 @@ import { AuthContext } from "../context/Auth/AuthContext";
 import BackdropLoading from "../components/BackdropLoading";
 import { i18n } from "../translate/i18n";
 import { useThemeContext } from "../context/DarkMode";
+import { useBranding } from "../context/Branding";
 
 const drawerWidth = 240;
 
@@ -136,6 +137,7 @@ const LoggedInLayout = ({ children }) => {
   const [drawerVariant, setDrawerVariant] = useState("permanent");
   const { user } = useContext(AuthContext);
   const { darkMode, toggleTheme } = useThemeContext();
+  const branding = useBranding();
 
   useEffect(() => {
     if (document.body.offsetWidth > 600) {
@@ -232,7 +234,14 @@ const LoggedInLayout = ({ children }) => {
             noWrap
             className={classes.title}
           >
-            WhaTicket
+            {branding.brandLogo && (
+              <img
+                src={`http://localhost:8085${branding.brandLogo}`}
+                alt={branding.brandName}
+                style={{ height: 28, verticalAlign: "middle", marginRight: 8 }}
+              />
+            )}
+            {branding.brandName || "WhaTicket"}
           </Typography>
 
           <div className={classes.themeSwitchContainer}>

@@ -8,13 +8,17 @@ import {
   AutoIncrement,
   AllowNull,
   Unique,
-  BelongsToMany
+  BelongsToMany,
+  Default,
+  ForeignKey,
+  BelongsTo
 } from "sequelize-typescript";
 import User from "./User";
 import UserQueue from "./UserQueue";
 
 import Whatsapp from "./Whatsapp";
 import WhatsappQueue from "./WhatsappQueue";
+import AiSetting from "./AiSetting";
 
 @Table
 class Queue extends Model<Queue> {
@@ -35,6 +39,17 @@ class Queue extends Model<Queue> {
 
   @Column
   greetingMessage: string;
+
+  @Default(false)
+  @Column
+  useAI: boolean;
+
+  @ForeignKey(() => AiSetting)
+  @Column
+  aiSettingId: number;
+
+  @BelongsTo(() => AiSetting)
+  aiSetting: AiSetting;
 
   @CreatedAt
   createdAt: Date;

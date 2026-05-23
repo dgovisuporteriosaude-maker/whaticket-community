@@ -80,7 +80,8 @@ const UserModal = ({ open, onClose, userId }) => {
 		name: "",
 		email: "",
 		password: "",
-		profile: "user"
+		profile: "user",
+		attendanceGreeting: ""
 	};
 
 	const { user: loggedInUser } = useContext(AuthContext);
@@ -264,6 +265,16 @@ const UserModal = ({ open, onClose, userId }) => {
 											</Field>
 										</FormControl>
 									)}
+								/>
+								<Field
+									as={TextField}
+									label="Saudacao de atendimento"
+									name="attendanceGreeting"
+									variant="outlined"
+									margin="dense"
+									fullWidth
+									multiline
+									rows={3}
 								/>
 							</DialogContent>
 							<DialogActions>

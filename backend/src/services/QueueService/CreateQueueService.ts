@@ -6,6 +6,8 @@ interface QueueData {
   name: string;
   color: string;
   greetingMessage?: string;
+  useAI?: boolean;
+  aiSettingId?: number | null;
 }
 
 const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {

@@ -3,7 +3,7 @@
   AutoIncrement, AllowNull, Default, DataType
 } from "sequelize-typescript";
 
-@Table
+@Table({ tableName: "KnowledgeBaseArticles" })
 class KnowledgeBaseArticle extends Model<KnowledgeBaseArticle> {
   @PrimaryKey
   @AutoIncrement

@@ -17,6 +17,8 @@ import Message from "./Message";
 import Queue from "./Queue";
 import User from "./User";
 import Whatsapp from "./Whatsapp";
+import TicketCategory from "./TicketCategory";
+import ClosingReason from "./ClosingReason";
 
 @Table
 class Ticket extends Model<Ticket> {
@@ -71,6 +73,39 @@ class Ticket extends Model<Ticket> {
 
   @BelongsTo(() => Queue)
   queue: Queue;
+
+  @ForeignKey(() => TicketCategory)
+  @Column
+  categoryId: number;
+
+  @BelongsTo(() => TicketCategory)
+  category: TicketCategory;
+
+  @ForeignKey(() => ClosingReason)
+  @Column
+  closingReasonId: number;
+
+  @BelongsTo(() => ClosingReason)
+  closingReason: ClosingReason;
+
+  @Column
+  closingNote: string;
+
+  @Column
+  glpiTicketId: number;
+
+  @Column
+  uraFlowId: number;
+
+  @Column
+  uraMenuSentAt: Date;
+
+  @Default(false)
+  @Column
+  aiActive: boolean;
+
+  @Column
+  aiSettingId: number;
 
   @HasMany(() => Message)
   messages: Message[];

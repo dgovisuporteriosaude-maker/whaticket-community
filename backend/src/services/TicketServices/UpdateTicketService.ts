@@ -1,9 +1,8 @@
 import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import SetTicketMessagesAsRead from "../../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../../libs/socket";
+import AppError from "../../errors/AppError";
 import Ticket from "../../models/Ticket";
-import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
-import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import ShowTicketService from "./ShowTicketService";
 
 interface TicketData {
@@ -11,6 +10,13 @@ interface TicketData {
   userId?: number;
   queueId?: number;
   whatsappId?: number;
+  categoryId?: number;
+  closingReasonId?: number;
+  closingNote?: string;
+  aiActive?: boolean;
+  aiSettingId?: number | null;
+  uraFlowId?: number | null;
+  uraMenuSentAt?: Date | null;
 }
 
 interface Request {
@@ -28,10 +34,26 @@ const UpdateTicketService = async ({
   ticketData,
   ticketId
 }: Request): Promise<Response> => {
-  const { status, userId, queueId, whatsappId } = ticketData;
+  const {
+    status,
+    userId,
+    queueId,
+    whatsappId,
+    categoryId,
+    closingReasonId,
+    closingNote,
+    aiActive,
+    aiSettingId,
+    uraFlowId,
+    uraMenuSentAt
+  } = ticketData;
 
   const ticket = await ShowTicketService(ticketId);
   await SetTicketMessagesAsRead(ticket);
+
+  if (status === "closed" && (!categoryId || !closingReasonId)) {
+    throw new AppError("ERR_CLOSING_FIELDS_REQUIRED", 400);
+  }
 
   if (whatsappId && ticket.whatsappId !== whatsappId) {
     await CheckContactOpenTickets(ticket.contactId, whatsappId);
@@ -44,10 +66,19 @@ const UpdateTicketService = async ({
     await CheckContactOpenTickets(ticket.contact.id, ticket.whatsappId);
   }
 
+  const shouldDisableBot = status === "closed" || (status === "open" && !!userId);
+
   await ticket.update({
     status,
     queueId,
-    userId
+    userId,
+    categoryId,
+    closingReasonId,
+    closingNote,
+    aiActive: shouldDisableBot ? false : aiActive,
+    aiSettingId: shouldDisableBot ? null : aiSettingId,
+    uraFlowId,
+    uraMenuSentAt
   });
 
   if (whatsappId) {
@@ -56,26 +87,26 @@ const UpdateTicketService = async ({
     });
   }
 
-  await ticket.reload();
+  const updatedTicket = await ShowTicketService(ticket.id);
 
   const io = getIO();
 
-  if (ticket.status !== oldStatus || ticket.user?.id !== oldUserId) {
+  if (updatedTicket.status !== oldStatus || updatedTicket.user?.id !== oldUserId) {
     io.to(oldStatus).emit("ticket", {
       action: "delete",
-      ticketId: ticket.id
+      ticketId: updatedTicket.id
     });
   }
 
-  io.to(ticket.status)
+  io.to(updatedTicket.status)
     .to("notification")
     .to(ticketId.toString())
     .emit("ticket", {
       action: "update",
-      ticket
+      ticket: updatedTicket
     });
 
-  return { ticket, oldStatus, oldUserId };
+  return { ticket: updatedTicket, oldStatus, oldUserId };
 };
 
 export default UpdateTicketService;

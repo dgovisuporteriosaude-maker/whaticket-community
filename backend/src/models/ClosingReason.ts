@@ -3,7 +3,7 @@
   AutoIncrement, AllowNull, Default, DataType
 } from "sequelize-typescript";
 
-@Table
+@Table({ tableName: "ClosingReasons" })
 class ClosingReason extends Model<ClosingReason> {
   @PrimaryKey
   @AutoIncrement

@@ -16,6 +16,8 @@ import WhatsAppIcon from "@material-ui/icons/WhatsApp";
 import SearchIcon from "@material-ui/icons/Search";
 import TextField from "@material-ui/core/TextField";
 import InputAdornment from "@material-ui/core/InputAdornment";
+import MenuItem from "@material-ui/core/MenuItem";
+import Chip from "@material-ui/core/Chip";
 
 import IconButton from "@material-ui/core/IconButton";
 import DeleteOutlineIcon from "@material-ui/icons/DeleteOutline";
@@ -86,6 +88,19 @@ const useStyles = makeStyles((theme) => ({
     overflowY: "scroll",
     ...theme.scrollbarStyles,
   },
+  filters: {
+    display: "flex",
+    alignItems: "center",
+    gap: theme.spacing(1),
+  },
+  tagFilter: {
+    minWidth: 220,
+  },
+  tagChips: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: theme.spacing(0.5),
+  },
 }));
 
 const Contacts = () => {
@@ -97,6 +112,8 @@ const Contacts = () => {
   const [loading, setLoading] = useState(false);
   const [pageNumber, setPageNumber] = useState(1);
   const [searchParam, setSearchParam] = useState("");
+  const [tagFilterIds, setTagFilterIds] = useState([]);
+  const [tags, setTags] = useState([]);
   const [contacts, dispatch] = useReducer(reducer, []);
   const [selectedContactId, setSelectedContactId] = useState(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
@@ -107,7 +124,20 @@ const Contacts = () => {
   useEffect(() => {
     dispatch({ type: "RESET" });
     setPageNumber(1);
-  }, [searchParam]);
+  }, [searchParam, tagFilterIds]);
+
+  useEffect(() => {
+    const loadTags = async () => {
+      try {
+        const { data } = await api.get("/tags");
+        setTags(data);
+      } catch (err) {
+        toastError(err);
+      }
+    };
+
+    loadTags();
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -115,7 +145,7 @@ const Contacts = () => {
       const fetchContacts = async () => {
         try {
           const { data } = await api.get("/contacts/", {
-            params: { searchParam, pageNumber },
+            params: { searchParam, pageNumber, tagIds: JSON.stringify(tagFilterIds) },
           });
           dispatch({ type: "LOAD_CONTACTS", payload: data.contacts });
           setHasMore(data.hasMore);
@@ -127,7 +157,7 @@ const Contacts = () => {
       fetchContacts();
     }, 500);
     return () => clearTimeout(delayDebounceFn);
-  }, [searchParam, pageNumber]);
+  }, [searchParam, pageNumber, tagFilterIds]);
 
   useEffect(() => {
     const socket = openSocket();
@@ -149,6 +179,10 @@ const Contacts = () => {
 
   const handleSearch = (event) => {
     setSearchParam(event.target.value.toLowerCase());
+  };
+
+  const handleTagFilterChange = event => {
+    setTagFilterIds(event.target.value);
   };
 
   const handleOpenContactModal = () => {
@@ -246,19 +280,54 @@ const Contacts = () => {
       <MainHeader>
         <Title>{i18n.t("contacts.title")}</Title>
         <MainHeaderButtonsWrapper>
-          <TextField
-            placeholder={i18n.t("contacts.searchPlaceholder")}
-            type="search"
-            value={searchParam}
-            onChange={handleSearch}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon style={{ color: "gray" }} />
-                </InputAdornment>
-              ),
-            }}
-          />
+          <div className={classes.filters}>
+            <TextField
+              placeholder={i18n.t("contacts.searchPlaceholder")}
+              type="search"
+              value={searchParam}
+              onChange={handleSearch}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon style={{ color: "gray" }} />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <TextField
+              select
+              variant="outlined"
+              size="small"
+              label="Tags"
+              value={tagFilterIds}
+              onChange={handleTagFilterChange}
+              className={classes.tagFilter}
+              SelectProps={{
+                multiple: true,
+                renderValue: selected => (
+                  <div className={classes.tagChips}>
+                    {selected.map(tagId => {
+                      const tag = tags.find(item => item.id === tagId);
+                      return (
+                        <Chip
+                          key={tagId}
+                          size="small"
+                          label={tag?.name || tagId}
+                          style={{ backgroundColor: tag?.color || "#607d8b", color: "#fff" }}
+                        />
+                      );
+                    })}
+                  </div>
+                ),
+              }}
+            >
+              {tags.map(tag => (
+                <MenuItem key={tag.id} value={tag.id}>
+                  {tag.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          </div>
           <Button
             variant="contained"
             color="primary"
@@ -291,6 +360,7 @@ const Contacts = () => {
               <TableCell align="center">
                 {i18n.t("contacts.table.email")}
               </TableCell>
+              <TableCell align="center">Tags</TableCell>
               <TableCell align="center">
                 {i18n.t("contacts.table.actions")}
               </TableCell>
@@ -306,6 +376,18 @@ const Contacts = () => {
                   <TableCell>{contact.name}</TableCell>
                   <TableCell align="center">{contact.number}</TableCell>
                   <TableCell align="center">{contact.email}</TableCell>
+                  <TableCell align="center">
+                    <div className={classes.tagChips}>
+                      {contact.tags?.map(tag => (
+                        <Chip
+                          key={tag.id}
+                          size="small"
+                          label={tag.name}
+                          style={{ backgroundColor: tag.color || "#607d8b", color: "#fff" }}
+                        />
+                      ))}
+                    </div>
+                  </TableCell>
                   <TableCell align="center">
                     <IconButton
                       size="small"

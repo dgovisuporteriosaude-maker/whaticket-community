@@ -8,7 +8,8 @@ const FindOrCreateTicketService = async (
   contact: Contact,
   whatsappId: number,
   unreadMessages: number,
-  groupContact?: Contact
+  groupContact?: Contact,
+  fromMe = false
 ): Promise<Ticket> => {
   let ticket = await Ticket.findOne({
     where: {
@@ -24,7 +25,7 @@ const FindOrCreateTicketService = async (
     await ticket.update({ unreadMessages });
   }
 
-  if (!ticket && groupContact) {
+  if (!ticket && groupContact && !fromMe) {
     ticket = await Ticket.findOne({
       where: {
         contactId: groupContact.id,
@@ -37,12 +38,17 @@ const FindOrCreateTicketService = async (
       await ticket.update({
         status: "pending",
         userId: null,
+        aiActive: false,
+        aiSettingId: null,
+        uraFlowId: null,
+        uraMenuSentAt: null,
+        queueId: null,
         unreadMessages
       });
     }
   }
 
-  if (!ticket && !groupContact) {
+  if (!ticket && !groupContact && !fromMe) {
     ticket = await Ticket.findOne({
       where: {
         updatedAt: {
@@ -58,12 +64,20 @@ const FindOrCreateTicketService = async (
       await ticket.update({
         status: "pending",
         userId: null,
+        queueId: null,
+        categoryId: null,
+        closingReasonId: null,
+        closingNote: null,
+        aiActive: false,
+        aiSettingId: null,
+        uraFlowId: null,
+        uraMenuSentAt: null,
         unreadMessages
       });
     }
   }
 
-  if (!ticket) {
+  if (!ticket && !fromMe) {
     ticket = await Ticket.create({
       contactId: groupContact ? groupContact.id : contact.id,
       status: "pending",
@@ -71,6 +85,10 @@ const FindOrCreateTicketService = async (
       unreadMessages,
       whatsappId
     });
+  }
+
+  if (!ticket) {
+    throw new Error("ERR_NO_OPEN_TICKET_FOR_OUTGOING_MESSAGE");
   }
 
   ticket = await ShowTicketService(ticket.id);

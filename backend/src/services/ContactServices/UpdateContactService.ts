@@ -1,6 +1,7 @@
 import AppError from "../../errors/AppError";
 import Contact from "../../models/Contact";
 import ContactCustomField from "../../models/ContactCustomField";
+import Tag from "../../models/Tag";
 
 interface ExtraInfo {
   id?: number;
@@ -12,6 +13,7 @@ interface ContactData {
   number?: string;
   name?: string;
   extraInfo?: ExtraInfo[];
+  tagIds?: number[];
 }
 
 interface Request {
@@ -23,12 +25,12 @@ const UpdateContactService = async ({
   contactData,
   contactId
 }: Request): Promise<Contact> => {
-  const { email, name, number, extraInfo } = contactData;
+  const { email, name, number, extraInfo, tagIds } = contactData;
 
   const contact = await Contact.findOne({
     where: { id: contactId },
     attributes: ["id", "name", "number", "email", "profilePicUrl"],
-    include: ["extraInfo"]
+    include: ["extraInfo", "tags"]
   });
 
   if (!contact) {
@@ -59,9 +61,14 @@ const UpdateContactService = async ({
     email
   });
 
+  if (tagIds) {
+    const tags = await Tag.findAll({ where: { id: tagIds } });
+    await contact.$set("tags", tags);
+  }
+
   await contact.reload({
     attributes: ["id", "name", "number", "email", "profilePicUrl"],
-    include: ["extraInfo"]
+    include: ["extraInfo", "tags"]
   });
 
   return contact;

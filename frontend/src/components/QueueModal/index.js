@@ -13,6 +13,9 @@ import DialogActions from "@material-ui/core/DialogActions";
 import DialogContent from "@material-ui/core/DialogContent";
 import DialogTitle from "@material-ui/core/DialogTitle";
 import CircularProgress from "@material-ui/core/CircularProgress";
+import Switch from "@material-ui/core/Switch";
+import FormControlLabel from "@material-ui/core/FormControlLabel";
+import MenuItem from "@material-ui/core/MenuItem";
 
 import { i18n } from "../../translate/i18n";
 
@@ -70,11 +73,27 @@ const QueueModal = ({ open, onClose, queueId }) => {
 		name: "",
 		color: "",
 		greetingMessage: "",
+		useAI: false,
+		aiSettingId: "",
 	};
 
 	const [colorPickerModalOpen, setColorPickerModalOpen] = useState(false);
 	const [queue, setQueue] = useState(initialState);
+	const [aiSettings, setAiSettings] = useState([]);
 	const greetingRef = useRef();
+
+	useEffect(() => {
+		const fetchAiSettings = async () => {
+			try {
+				const { data } = await api.get("/ai-settings");
+				setAiSettings(data.filter(setting => setting.active !== false));
+			} catch (err) {
+				toastError(err);
+			}
+		};
+
+		if (open) fetchAiSettings();
+	}, [open]);
 
 	useEffect(() => {
 		(async () => {
@@ -82,7 +101,7 @@ const QueueModal = ({ open, onClose, queueId }) => {
 			try {
 				const { data } = await api.get(`/queue/${queueId}`);
 				setQueue(prevState => {
-					return { ...prevState, ...data };
+					return { ...prevState, ...data, aiSettingId: data.aiSettingId || "" };
 				});
 			} catch (err) {
 				toastError(err);
@@ -94,6 +113,8 @@ const QueueModal = ({ open, onClose, queueId }) => {
 				name: "",
 				color: "",
 				greetingMessage: "",
+				useAI: false,
+				aiSettingId: "",
 			});
 		};
 	}, [queueId, open]);
@@ -105,10 +126,14 @@ const QueueModal = ({ open, onClose, queueId }) => {
 
 	const handleSaveQueue = async values => {
 		try {
+			const queueData = {
+				...values,
+				aiSettingId: values.useAI && values.aiSettingId ? values.aiSettingId : null,
+			};
 			if (queueId) {
-				await api.put(`/queue/${queueId}`, values);
+				await api.put(`/queue/${queueId}`, queueData);
 			} else {
-				await api.post("/queue", values);
+				await api.post("/queue", queueData);
 			}
 			toast.success("Queue saved successfully");
 			handleClose();
@@ -213,6 +238,34 @@ const QueueModal = ({ open, onClose, queueId }) => {
 										margin="dense"
 									/>
 								</div>
+								<FormControlLabel
+									control={
+										<Field
+											as={Switch}
+											color="primary"
+											name="useAI"
+											checked={values.useAI}
+										/>
+									}
+									label="Usar IA nesta fila"
+								/>
+								<Field
+									as={TextField}
+									select
+									fullWidth
+									disabled={!values.useAI}
+									label="Configuracao de IA"
+									name="aiSettingId"
+									variant="outlined"
+									margin="dense"
+								>
+									<MenuItem value="">Selecione</MenuItem>
+									{aiSettings.map(setting => (
+										<MenuItem key={setting.id} value={setting.id}>
+											{setting.name}
+										</MenuItem>
+									))}
+								</Field>
 							</DialogContent>
 							<DialogActions>
 								<Button

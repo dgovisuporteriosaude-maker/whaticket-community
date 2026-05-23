@@ -7,6 +7,8 @@ import Message from "../../models/Message";
 import Queue from "../../models/Queue";
 import ShowUserService from "../UserServices/ShowUserService";
 import Whatsapp from "../../models/Whatsapp";
+import TicketCategory from "../../models/TicketCategory";
+import ClosingReason from "../../models/ClosingReason";
 
 interface Request {
   searchParam?: string;
@@ -56,6 +58,16 @@ const ListTicketsService = async ({
       model: Whatsapp,
       as: "whatsapp",
       attributes: ["name"]
+    },
+    {
+      model: TicketCategory,
+      as: "category",
+      attributes: ["id", "name"]
+    },
+    {
+      model: ClosingReason,
+      as: "closingReason",
+      attributes: ["id", "name"]
     }
   ];
 

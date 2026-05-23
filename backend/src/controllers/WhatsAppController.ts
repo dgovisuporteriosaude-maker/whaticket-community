@@ -16,6 +16,7 @@ interface WhatsappData {
   farewellMessage?: string;
   status?: string;
   isDefault?: boolean;
+  uraFlowId?: number | null;
 }
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -31,6 +32,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     isDefault,
     greetingMessage,
     farewellMessage,
+    uraFlowId,
     queueIds
   }: WhatsappData = req.body;
 
@@ -40,6 +42,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     isDefault,
     greetingMessage,
     farewellMessage,
+    uraFlowId,
     queueIds
   });
 

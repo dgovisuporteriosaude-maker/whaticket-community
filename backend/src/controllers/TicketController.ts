@@ -25,6 +25,10 @@ interface TicketData {
   status: string;
   queueId: number;
   userId: number;
+  categoryId?: number;
+  closingReasonId?: number;
+  closingNote?: string;
+  sendFarewellMessage?: boolean;
 }
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -89,15 +93,34 @@ export const update = async (
   const { ticketId } = req.params;
   const ticketData: TicketData = req.body;
 
-  const { ticket } = await UpdateTicketService({
+  const { ticket, oldStatus } = await UpdateTicketService({
     ticketData,
     ticketId
   });
 
-  if (ticket.status === "closed") {
+  if (
+    ticketData.status === "open" &&
+    !!ticketData.userId &&
+    ticketData.sendFarewellMessage === undefined &&
+    oldStatus === "pending" &&
+    ticket.status === "open" &&
+    !ticket.isGroup &&
+    ticket.user?.attendanceGreeting
+  ) {
+    await SendWhatsAppMessage({
+      body: formatBody(ticket.user.attendanceGreeting, ticket.contact),
+      ticket
+    });
+  }
+
+  if (ticket.status === "closed" && ticketData.sendFarewellMessage === true) {
     const whatsapp = await ShowWhatsAppService(ticket.whatsappId);
 
-    const { farewellMessage } = whatsapp;
+    const closingReason = ticket.closingReason;
+    const farewellMessage =
+      closingReason?.sendFarewellMessage && closingReason.farewellMessage
+        ? closingReason.farewellMessage
+        : whatsapp.farewellMessage;
 
     if (farewellMessage) {
       await SendWhatsAppMessage({

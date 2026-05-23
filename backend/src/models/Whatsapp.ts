@@ -11,11 +11,14 @@ import {
   AllowNull,
   HasMany,
   Unique,
-  BelongsToMany
+  BelongsToMany,
+  ForeignKey,
+  BelongsTo
 } from "sequelize-typescript";
 import Queue from "./Queue";
 import Ticket from "./Ticket";
 import WhatsappQueue from "./WhatsappQueue";
+import UraFlow from "./UraFlow";
 
 @Table
 class Whatsapp extends Model<Whatsapp> {
@@ -57,6 +60,13 @@ class Whatsapp extends Model<Whatsapp> {
   @AllowNull
   @Column
   isDefault: boolean;
+
+  @ForeignKey(() => UraFlow)
+  @Column
+  uraFlowId: number;
+
+  @BelongsTo(() => UraFlow)
+  uraFlow: UraFlow;
 
   @CreatedAt
   createdAt: Date;

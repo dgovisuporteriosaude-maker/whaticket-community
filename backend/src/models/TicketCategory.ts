@@ -3,7 +3,7 @@
   AutoIncrement, AllowNull, Default, DataType
 } from "sequelize-typescript";
 
-@Table
+@Table({ tableName: "TicketCategories" })
 class TicketCategory extends Model<TicketCategory> {
   @PrimaryKey
   @AutoIncrement

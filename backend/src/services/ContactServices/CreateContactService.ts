@@ -1,5 +1,6 @@
 import AppError from "../../errors/AppError";
 import Contact from "../../models/Contact";
+import Tag from "../../models/Tag";
 
 interface ExtraInfo {
   name: string;
@@ -12,13 +13,15 @@ interface Request {
   email?: string;
   profilePicUrl?: string;
   extraInfo?: ExtraInfo[];
+  tagIds?: number[];
 }
 
 const CreateContactService = async ({
   name,
   number,
   email = "",
-  extraInfo = []
+  extraInfo = [],
+  tagIds = []
 }: Request): Promise<Contact> => {
   const numberExists = await Contact.findOne({
     where: { number }
@@ -39,6 +42,13 @@ const CreateContactService = async ({
       include: ["extraInfo"]
     }
   );
+
+  if (tagIds.length) {
+    const tags = await Tag.findAll({ where: { id: tagIds } });
+    await contact.$set("tags", tags);
+  }
+
+  await contact.reload({ include: ["extraInfo", "tags"] });
 
   return contact;
 };

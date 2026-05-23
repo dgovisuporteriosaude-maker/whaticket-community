@@ -12,6 +12,8 @@ import queueRoutes from "./queueRoutes";
 import quickAnswerRoutes from "./quickAnswerRoutes";
 import apiRoutes from "./apiRoutes";
 import customAdminRoutes from "./customAdminRoutes";
+import campaignRoutes from "./campaignRoutes";
+import tagRoutes from "./tagRoutes";
 
 const routes = Router();
 
@@ -27,6 +29,8 @@ routes.use(queueRoutes);
 routes.use(quickAnswerRoutes);
 routes.use("/api/messages", apiRoutes);
 routes.use(customAdminRoutes);
+routes.use(campaignRoutes);
+routes.use(tagRoutes);
 
 export default routes;
 

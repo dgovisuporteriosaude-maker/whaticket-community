@@ -2,6 +2,7 @@ import { join } from "path";
 import { promisify } from "util";
 import { writeFile } from "fs";
 import * as Sentry from "@sentry/node";
+import { Op } from "sequelize";
 
 import { getIO } from "../libs/socket";
 import { logger } from "../utils/logger";
@@ -11,6 +12,7 @@ import formatBody from "../helpers/Mustache";
 import Contact from "../models/Contact";
 import Ticket from "../models/Ticket";
 import Message from "../models/Message";
+import Queue from "../models/Queue";
 
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
 import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
@@ -18,11 +20,14 @@ import FindOrCreateTicketService from "../services/TicketServices/FindOrCreateTi
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import CreateContactService from "../services/ContactServices/CreateContactService";
+import CreateGlpiTicketService from "../services/GlpiServices/CreateGlpiTicketService";
+import GenerateAiResponseService from "../services/AiServices/GenerateAiResponseService";
 
 import { whatsappProvider } from "../providers/WhatsApp/whatsappProvider";
 import { MessageType, MessageAck } from "../providers/WhatsApp/types";
 
 const writeFileAsync = promisify(writeFile);
+const uraMenuLocks = new Set<number>();
 
 export interface ContactPayload {
   name: string;
@@ -144,6 +149,220 @@ const processVcardMessage = async (
   }
 };
 
+const contactChatId = (contactPayload: ContactPayload): string =>
+  `${contactPayload.number}@${contactPayload.isGroup ? "g" : "c"}.us`;
+
+const sendTextMessage = async (
+  whatsappId: number,
+  contactPayload: ContactPayload,
+  body: string,
+  ticket?: Ticket
+): Promise<void> => {
+  const sentMessage = await whatsappProvider.sendMessage(
+    whatsappId,
+    contactChatId(contactPayload),
+    formatBody(`\u200e${body}`, contactPayload as any)
+  );
+
+  if (ticket) {
+    await CreateMessageService({
+      messageData: {
+        id: sentMessage.id,
+        ticketId: ticket.id,
+        body: sentMessage.body || body,
+        fromMe: true,
+        read: true,
+        mediaType: sentMessage.type,
+        ack: sentMessage.ack !== undefined ? sentMessage.ack : 1
+      }
+    });
+    await ticket.update({ lastMessage: sentMessage.body || body });
+  }
+};
+
+const sendQueueGreeting = async (
+  whatsappId: number,
+  contactPayload: ContactPayload,
+  queue: Queue
+): Promise<void> => {
+  if (!queue.greetingMessage) return;
+
+  try {
+    await sendTextMessage(whatsappId, contactPayload, queue.greetingMessage);
+  } catch (error) {
+    logger.error("Error sending queue greeting message:", error);
+  }
+};
+
+const handleAiReply = async (
+  whatsappId: number,
+  messageBody: string,
+  ticket: Ticket,
+  contactPayload: ContactPayload,
+  aiSettingId?: number | null
+): Promise<boolean> => {
+  const aiResponse = await GenerateAiResponseService({
+    aiSettingId,
+    message: messageBody,
+    contactName: contactPayload.name
+  });
+
+  if (!aiResponse) {
+    await sendTextMessage(
+      whatsappId,
+      contactPayload,
+      "Nao consegui gerar uma resposta automatica agora. Vou manter seu atendimento na fila para continuidade.",
+      ticket
+    );
+    await ticket.update({ aiActive: false, aiSettingId: null });
+    return false;
+  }
+
+  try {
+    await sendTextMessage(whatsappId, contactPayload, aiResponse, ticket);
+    return true;
+  } catch (error) {
+    logger.error("Error sending AI response:", error);
+    return false;
+  }
+};
+
+const buildUraMenu = (flow: any): string => {
+  const options = [...(flow.options || [])].sort(
+    (a, b) => Number(a.order || 0) - Number(b.order || 0)
+  );
+
+  const optionLines = options
+    .map(option => `*${option.optionKey}* - ${option.title}`)
+    .join("\n");
+
+  return [flow.welcomeMessage, optionLines].filter(Boolean).join("\n");
+};
+
+const handleUraLogic = async (
+  whatsappId: number,
+  messageBody: string,
+  ticket: Ticket,
+  contactPayload: ContactPayload,
+  whatsapp: any
+): Promise<boolean> => {
+  const flow = whatsapp.uraFlow;
+
+  if (!flow || !flow.active) return false;
+
+  const options = [...(flow.options || [])].sort(
+    (a, b) => Number(a.order || 0) - Number(b.order || 0)
+  );
+  const normalizedMessage = (messageBody || "").trim().toLowerCase();
+  const selectedOption = options.find(
+    option => String(option.optionKey).trim().toLowerCase() === normalizedMessage
+  );
+
+  if (!selectedOption) {
+    const menuAlreadySentForFlow =
+      ticket.uraFlowId === flow.id && !!ticket.uraMenuSentAt;
+    const lastMenuSentAt = ticket.uraMenuSentAt
+      ? new Date(ticket.uraMenuSentAt).getTime()
+      : 0;
+    const sentRecently = lastMenuSentAt && Date.now() - lastMenuSentAt < 15000;
+
+    if (menuAlreadySentForFlow && sentRecently) {
+      return true;
+    }
+
+    if (uraMenuLocks.has(ticket.id)) {
+      return true;
+    }
+
+    if (menuAlreadySentForFlow && flow.invalidOptionMessage) {
+      await sendTextMessage(whatsappId, contactPayload, flow.invalidOptionMessage, ticket);
+      return true;
+    }
+
+    const menu = buildUraMenu(flow);
+    if (menu) {
+      uraMenuLocks.add(ticket.id);
+      try {
+        await sendTextMessage(whatsappId, contactPayload, menu, ticket);
+        await ticket.update({
+          queueId: null,
+          uraFlowId: flow.id,
+          uraMenuSentAt: new Date(),
+          aiActive: false,
+          aiSettingId: null
+        });
+      } finally {
+        setTimeout(() => uraMenuLocks.delete(ticket.id), 15000);
+      }
+    }
+    return true;
+  }
+
+  if (selectedOption.responseMessage) {
+    await sendTextMessage(whatsappId, contactPayload, selectedOption.responseMessage, ticket);
+  }
+
+  if (selectedOption.action === "TRANSFER_QUEUE" && selectedOption.targetQueueId) {
+    await UpdateTicketService({
+      ticketData: {
+        queueId: selectedOption.targetQueueId,
+        aiActive: false,
+        aiSettingId: null
+      },
+      ticketId: ticket.id
+    });
+
+    const queue = await Queue.findByPk(selectedOption.targetQueueId);
+    if (queue) {
+      await sendQueueGreeting(whatsappId, contactPayload, queue);
+    }
+    return true;
+  }
+
+  if (selectedOption.action === "START_AI") {
+    if (selectedOption.targetQueueId) {
+      const queue = await Queue.findByPk(selectedOption.targetQueueId);
+      const aiSettingId = queue?.aiSettingId || null;
+
+      await UpdateTicketService({
+        ticketData: {
+          queueId: selectedOption.targetQueueId,
+          aiActive: true,
+          aiSettingId
+        },
+        ticketId: ticket.id
+      });
+
+      if (queue) {
+        await sendQueueGreeting(whatsappId, contactPayload, queue);
+      }
+      return true;
+    }
+
+    await ticket.update({ aiActive: true, aiSettingId: null });
+    return true;
+  }
+
+  if (selectedOption.action === "HUMAN" && flow.fallbackQueueId) {
+    await UpdateTicketService({
+      ticketData: {
+        queueId: flow.fallbackQueueId,
+        aiActive: false,
+        aiSettingId: null
+      },
+      ticketId: ticket.id
+    });
+
+    const queue = await Queue.findByPk(flow.fallbackQueueId);
+    if (queue) {
+      await sendQueueGreeting(whatsappId, contactPayload, queue);
+    }
+    return true;
+  }
+
+  return true;
+};
+
 const handleQueueLogic = async (
   whatsappId: number,
   messageBody: string,
@@ -251,11 +470,24 @@ export const handleMessage = async (
       return;
     }
 
+    if (processedMessage.fromMe) {
+      const openTicket = await Ticket.findOne({
+        where: {
+          status: { [Op.or]: ["open", "pending"] },
+          contactId: groupContact ? groupContact.id : contact.id,
+          whatsappId: contextPayload.whatsappId
+        }
+      });
+
+      if (!openTicket) return;
+    }
+
     const ticket = await FindOrCreateTicketService(
       contact,
       contextPayload.whatsappId,
       contextPayload.unreadMessages,
-      groupContact
+      groupContact,
+      processedMessage.fromMe
     );
 
     const messageData: any = {
@@ -290,8 +522,43 @@ export const handleMessage = async (
     await ticket.update({ lastMessage: lastMessageText });
 
     await CreateMessageService({ messageData });
+    CreateGlpiTicketService(ticket);
 
     await processVcardMessage(processedMessage);
+
+    if (
+      whatsapp.uraFlow &&
+      !ticket.aiActive &&
+      !contextPayload.groupContact &&
+      !processedMessage.fromMe &&
+      !ticket.userId
+    ) {
+      const handledByUra = await handleUraLogic(
+        contextPayload.whatsappId,
+        processedMessage.body,
+        ticket,
+        contactPayload,
+        whatsapp
+      );
+
+      if (handledByUra) return;
+    }
+
+    if (
+      (ticket.aiActive || ticket.queue?.useAI) &&
+      !contextPayload.groupContact &&
+      !processedMessage.fromMe &&
+      !ticket.userId
+    ) {
+      await handleAiReply(
+        contextPayload.whatsappId,
+        processedMessage.body,
+        ticket,
+        contactPayload,
+        ticket.aiSettingId || ticket.queue?.aiSettingId
+      );
+      return;
+    }
 
     if (
       !ticket.queue &&

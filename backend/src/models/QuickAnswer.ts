@@ -6,10 +6,11 @@ import {
   UpdatedAt,
   Model,
   PrimaryKey,
-  AutoIncrement
+  AutoIncrement,
+  Default
 } from "sequelize-typescript";
 
-@Table
+@Table({ tableName: "QuickAnswers" })
 class QuickAnswer extends Model<QuickAnswer> {
   @PrimaryKey
   @AutoIncrement
@@ -21,6 +22,10 @@ class QuickAnswer extends Model<QuickAnswer> {
 
   @Column(DataType.TEXT)
   message: string;
+
+  @Default(true)
+  @Column
+  global: boolean;
 
   @CreatedAt
   createdAt: Date;

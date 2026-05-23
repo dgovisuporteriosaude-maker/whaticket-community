@@ -17,6 +17,11 @@ import UraFlow from "../models/UraFlow";
 import UraOption from "../models/UraOption";
 import AiSetting from "../models/AiSetting";
 import KnowledgeBaseArticle from "../models/KnowledgeBaseArticle";
+import Campaign from "../models/Campaign";
+import CampaignContact from "../models/CampaignContact";
+import ScheduledMessage from "../models/ScheduledMessage";
+import Tag from "../models/Tag";
+import ContactTag from "../models/ContactTag";
 
 
 // eslint-disable-next-line
@@ -37,7 +42,18 @@ const models = [
   WhatsappQueue,
   UserQueue,
   QuickAnswer,
-  WppKey
+  WppKey,
+  TicketCategory,
+  ClosingReason,
+  UraFlow,
+  UraOption,
+  AiSetting,
+  KnowledgeBaseArticle,
+  Campaign,
+  CampaignContact,
+  ScheduledMessage,
+  Tag,
+  ContactTag
 ];
 
 sequelize.addModels(models);

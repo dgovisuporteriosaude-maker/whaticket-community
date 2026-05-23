@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import { makeStyles } from "@material-ui/core/styles";
 import Typography from "@material-ui/core/Typography";
@@ -10,6 +10,7 @@ import InputLabel from "@material-ui/core/InputLabel";
 import Avatar from "@material-ui/core/Avatar";
 import Button from "@material-ui/core/Button";
 import Paper from "@material-ui/core/Paper";
+import Chip from "@material-ui/core/Chip";
 
 import { i18n } from "../../translate/i18n";
 
@@ -79,12 +80,24 @@ const useStyles = makeStyles(theme => ({
 		marginTop: 4,
 		padding: 6,
 	},
+	tagChips: {
+		display: "flex",
+		flexWrap: "wrap",
+		justifyContent: "center",
+		gap: theme.spacing(0.5),
+		marginTop: theme.spacing(1),
+	},
 }));
 
 const ContactDrawer = ({ open, handleDrawerClose, contact, loading }) => {
 	const classes = useStyles();
 
 	const [modalOpen, setModalOpen] = useState(false);
+	const [currentContact, setCurrentContact] = useState(contact || {});
+
+	useEffect(() => {
+		setCurrentContact(contact || {});
+	}, [contact]);
 
 	return (
 		<Drawer
@@ -116,15 +129,28 @@ const ContactDrawer = ({ open, handleDrawerClose, contact, loading }) => {
 				<div className={classes.content}>
 					<Paper square variant="outlined" className={classes.contactHeader}>
 						<Avatar
-							alt={contact.name}
-							src={contact.profilePicUrl}
+							alt={currentContact.name}
+							src={currentContact.profilePicUrl}
 							className={classes.contactAvatar}
 						></Avatar>
 
-						<Typography>{contact.name}</Typography>
+						<Typography>{currentContact.name}</Typography>
 						<Typography>
-							<Link href={`tel:${contact.number}`}>{contact.number}</Link>
+							<Link href={`tel:${currentContact.number}`}>{currentContact.number}</Link>
 						</Typography>
+						<div className={classes.tagChips}>
+							{currentContact.tags?.map(tag => (
+								<Chip
+									key={tag.id}
+									size="small"
+									label={tag.name}
+									style={{
+										backgroundColor: tag.color || "#607d8b",
+										color: "#fff",
+									}}
+								/>
+							))}
+						</div>
 						<Button
 							variant="outlined"
 							color="primary"
@@ -137,12 +163,13 @@ const ContactDrawer = ({ open, handleDrawerClose, contact, loading }) => {
 						<ContactModal
 							open={modalOpen}
 							onClose={() => setModalOpen(false)}
-							contactId={contact.id}
+							contactId={currentContact.id}
+							onSave={updatedContact => setCurrentContact(updatedContact)}
 						></ContactModal>
 						<Typography variant="subtitle1">
 							{i18n.t("contactDrawer.extraInfo")}
 						</Typography>
-						{contact?.extraInfo?.map(info => (
+						{currentContact?.extraInfo?.map(info => (
 							<Paper
 								key={info.id}
 								square

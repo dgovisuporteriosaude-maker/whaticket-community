@@ -16,6 +16,8 @@ import Typography from "@material-ui/core/Typography";
 import IconButton from "@material-ui/core/IconButton";
 import DeleteOutlineIcon from "@material-ui/icons/DeleteOutline";
 import CircularProgress from "@material-ui/core/CircularProgress";
+import MenuItem from "@material-ui/core/MenuItem";
+import Chip from "@material-ui/core/Chip";
 
 import { i18n } from "../../translate/i18n";
 
@@ -50,6 +52,19 @@ const useStyles = makeStyles(theme => ({
 		marginTop: -12,
 		marginLeft: -12,
 	},
+	tagChips: {
+		display: "flex",
+		flexWrap: "wrap",
+		gap: theme.spacing(0.5),
+	},
+	tagCreator: {
+		display: "flex",
+		alignItems: "center",
+		marginTop: theme.spacing(1),
+		"& > *:not(:last-child)": {
+			marginRight: theme.spacing(1),
+		},
+	},
 }));
 
 const ContactSchema = Yup.object().shape({
@@ -69,9 +84,21 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 		name: "",
 		number: "",
 		email: "",
+		tagIds: [],
 	};
 
 	const [contact, setContact] = useState(initialState);
+	const [tags, setTags] = useState([]);
+	const [newTagName, setNewTagName] = useState("");
+
+	const loadTags = async () => {
+		try {
+			const { data } = await api.get("/tags");
+			setTags(data);
+		} catch (err) {
+			toastError(err);
+		}
+	};
 
 	useEffect(() => {
 		return () => {
@@ -80,6 +107,8 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 	}, []);
 
 	useEffect(() => {
+		if (open) loadTags();
+
 		const fetchContact = async () => {
 			if (initialValues) {
 				setContact(prevState => {
@@ -92,7 +121,10 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 			try {
 				const { data } = await api.get(`/contacts/${contactId}`);
 				if (isMounted.current) {
-					setContact(data);
+					setContact({
+						...data,
+						tagIds: data.tags?.map(tag => tag.id) || [],
+					});
 				}
 			} catch (err) {
 				toastError(err);
@@ -109,17 +141,43 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 
 	const handleSaveContact = async values => {
 		try {
+			const contactData = {
+				...values,
+				tagIds: values.tagIds || [],
+			};
+
 			if (contactId) {
-				await api.put(`/contacts/${contactId}`, values);
+				const { data } = await api.put(`/contacts/${contactId}`, contactData);
+				if (onSave) {
+					onSave(data);
+				}
 				handleClose();
 			} else {
-				const { data } = await api.post("/contacts", values);
+				const { data } = await api.post("/contacts", contactData);
 				if (onSave) {
 					onSave(data);
 				}
 				handleClose();
 			}
 			toast.success(i18n.t("contactModal.success"));
+		} catch (err) {
+			toastError(err);
+		}
+	};
+
+	const handleCreateTag = async (setFieldValue, values) => {
+		if (!newTagName.trim()) return;
+
+		try {
+			const { data } = await api.post("/tags", { name: newTagName.trim() });
+			const updatedTags = tags.some(tag => tag.id === data.id)
+				? tags
+				: [...tags, data].sort((a, b) => a.name.localeCompare(b.name));
+			setTags(updatedTags);
+			if (!values.tagIds?.includes(data.id)) {
+				setFieldValue("tagIds", [...(values.tagIds || []), data.id]);
+			}
+			setNewTagName("");
 		} catch (err) {
 			toastError(err);
 		}
@@ -144,7 +202,7 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 						}, 400);
 					}}
 				>
-					{({ values, errors, touched, isSubmitting }) => (
+					{({ values, errors, touched, isSubmitting, setFieldValue }) => (
 						<Form>
 							<DialogContent dividers>
 								<Typography variant="subtitle1" gutterBottom>
@@ -183,6 +241,59 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 										margin="dense"
 										variant="outlined"
 									/>
+								</div>
+								<Field
+									as={TextField}
+									select
+									fullWidth
+									label="Tags"
+									name="tagIds"
+									variant="outlined"
+									margin="dense"
+									SelectProps={{
+										multiple: true,
+										renderValue: selected => (
+											<div className={classes.tagChips}>
+												{selected.map(tagId => {
+													const tag = tags.find(item => item.id === tagId);
+													return (
+														<Chip
+															key={tagId}
+															size="small"
+															label={tag?.name || tagId}
+															style={{
+																backgroundColor: tag?.color || "#607d8b",
+																color: "#fff",
+															}}
+														/>
+													);
+												})}
+											</div>
+										),
+									}}
+								>
+									{tags.map(tag => (
+										<MenuItem key={tag.id} value={tag.id}>
+											{tag.name}
+										</MenuItem>
+									))}
+								</Field>
+								<div className={classes.tagCreator}>
+									<TextField
+										fullWidth
+										margin="dense"
+										variant="outlined"
+										label="Nova tag"
+										value={newTagName}
+										onChange={event => setNewTagName(event.target.value)}
+									/>
+									<Button
+										color="primary"
+										variant="outlined"
+										onClick={() => handleCreateTag(setFieldValue, values)}
+									>
+										Criar tag
+									</Button>
 								</div>
 								<Typography
 									style={{ marginBottom: 8, marginTop: 12 }}

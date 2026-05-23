@@ -88,7 +88,7 @@ const useWhatsApps = () => {
 		});
 
 		socket.on("whatsappSession", data => {
-			if (data.action === "update") {
+			if (data.action === "update" && data.session) {
 				dispatch({ type: "UPDATE_SESSION", payload: data.session });
 			}
 		});

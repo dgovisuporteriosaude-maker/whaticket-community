@@ -4,7 +4,7 @@
 } from "sequelize-typescript";
 import UraFlow from "./UraFlow";
 
-@Table
+@Table({ tableName: "UraOptions" })
 class UraOption extends Model<UraOption> {
   @PrimaryKey
   @AutoIncrement

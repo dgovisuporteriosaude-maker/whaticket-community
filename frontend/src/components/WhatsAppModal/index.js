@@ -16,6 +16,7 @@ import {
 	TextField,
 	Switch,
 	FormControlLabel,
+	MenuItem,
 } from "@material-ui/core";
 
 import api from "../../services/api";
@@ -64,9 +65,24 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 		greetingMessage: "",
 		farewellMessage: "",
 		isDefault: false,
+		uraFlowId: "",
 	};
 	const [whatsApp, setWhatsApp] = useState(initialState);
 	const [selectedQueueIds, setSelectedQueueIds] = useState([]);
+	const [uraFlows, setUraFlows] = useState([]);
+
+	useEffect(() => {
+		const fetchUraFlows = async () => {
+			try {
+				const { data } = await api.get("/ura-flows");
+				setUraFlows(data.filter(flow => flow.active !== false));
+			} catch (err) {
+				toastError(err);
+			}
+		};
+
+		if (open) fetchUraFlows();
+	}, [open]);
 
 	useEffect(() => {
 		const fetchSession = async () => {
@@ -74,7 +90,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 
 			try {
 				const { data } = await api.get(`whatsapp/${whatsAppId}`);
-				setWhatsApp(data);
+				setWhatsApp({ ...data, uraFlowId: data.uraFlowId || "" });
 
 				const whatsQueueIds = data.queues?.map(queue => queue.id);
 				setSelectedQueueIds(whatsQueueIds);
@@ -86,7 +102,11 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 	}, [whatsAppId]);
 
 	const handleSaveWhatsApp = async values => {
-		const whatsappData = { ...values, queueIds: selectedQueueIds };
+		const whatsappData = {
+			...values,
+			uraFlowId: values.uraFlowId || null,
+			queueIds: selectedQueueIds,
+		};
 
 		try {
 			if (whatsAppId) {
@@ -157,6 +177,24 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 										}
 										label={i18n.t("whatsappModal.form.default")}
 									/>
+								</div>
+								<div>
+									<Field
+										as={TextField}
+										select
+										fullWidth
+										label="Fluxo URA"
+										name="uraFlowId"
+										variant="outlined"
+										margin="dense"
+									>
+										<MenuItem value="">Sem URA</MenuItem>
+										{uraFlows.map(flow => (
+											<MenuItem key={flow.id} value={flow.id}>
+												{flow.name}
+											</MenuItem>
+										))}
+									</Field>
 								</div>
 								<div>
 									<Field

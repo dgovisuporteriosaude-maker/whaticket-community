@@ -29,6 +29,8 @@ const QrcodeModal = ({ open, onClose, whatsAppId }) => {
 		const socket = openSocket();
 
 		socket.on("whatsappSession", data => {
+			if (!data.session) return;
+
 			if (data.action === "update" && data.session.id === whatsAppId) {
 				setQrCode(data.session.qrcode);
 			}

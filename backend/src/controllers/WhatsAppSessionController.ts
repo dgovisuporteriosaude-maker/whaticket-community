@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { whatsappProvider } from "../providers/WhatsApp";
+import { getIO } from "../libs/socket";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
 import UpdateWhatsAppService from "../services/WhatsappService/UpdateWhatsAppService";
@@ -31,6 +32,17 @@ const remove = async (req: Request, res: Response): Promise<Response> => {
   const whatsapp = await ShowWhatsAppService(whatsappId);
 
   await whatsappProvider.logout(whatsapp.id);
+  await whatsapp.update({
+    status: "DISCONNECTED",
+    qrcode: "",
+    session: ""
+  });
+
+  const io = getIO();
+  io.emit("whatsappSession", {
+    action: "update",
+    session: whatsapp
+  });
 
   return res.status(200).json({ message: "Session disconnected." });
 };

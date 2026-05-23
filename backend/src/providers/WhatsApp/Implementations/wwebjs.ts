@@ -1,4 +1,4 @@
-﻿
+
 function shouldIgnoreNonTicketMessage(msg: any): boolean {
   const from = String(msg?.from || "");
   const to = String(msg?.to || "");
@@ -60,6 +60,7 @@ interface Session extends Client {
 }
 
 const sessions: Session[] = [];
+const intentionalDisconnects = new Set<number>();
 
 const getWbot = (whatsappId: number): Session => {
   const sessionIndex = sessions.findIndex(s => s.id === whatsappId);
@@ -446,8 +447,29 @@ const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
 };
 
 const logout = async (sessionId: number): Promise<void> => {
-  const wbot = getWbot(sessionId);
-  await wbot.logout();
+  const sessionIndex = sessions.findIndex(s => s.id === sessionId);
+
+  if (sessionIndex === -1) {
+    logger.warn(`Session ${sessionId} not found during logout`);
+    return;
+  }
+
+  const wbot = sessions[sessionIndex];
+  intentionalDisconnects.add(sessionId);
+
+  try {
+    await wbot.logout();
+  } catch (err) {
+    logger.warn({ err, sessionId }, "Ignoring whatsapp logout error");
+  }
+
+  try {
+    await wbot.destroy();
+  } catch (err) {
+    logger.warn({ err, sessionId }, "Ignoring whatsapp destroy error");
+  }
+
+  sessions.splice(sessionIndex, 1);
 };
 
 const deleteMessage = async (
@@ -470,9 +492,11 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     removeSession(whatsapp.id);
 
     const io = getIO();
-    const sessionName = whatsapp.name;    const args: string = process.env.CHROME_ARGS || "";
+    const sessionName = whatsapp.name;
+    const args: string = process.env.CHROME_ARGS || "";
 
-    const wbot: Session = new Client({      authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}` }),
+    const wbot: Session = new Client({
+      authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}` }),
       puppeteer: {
         // headless: false, // TODO make sure chromium closes on session disconnection / delete
         executablePath: process.env.CHROME_BIN || undefined,
@@ -502,7 +526,9 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       }
 
       io.emit("whatsappSession", {
-        action: "update",      });
+        action: "update",
+        session: whatsapp
+      });
     });
 
     wbot.on("authenticated", async () => {
@@ -524,7 +550,9 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       });
 
       io.emit("whatsappSession", {
-        action: "update",      });
+        action: "update",
+        session: whatsapp
+      });
     });
 
     wbot.on("ready", async () => {
@@ -538,7 +566,9 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         });
 
         io.emit("whatsappSession", {
-          action: "update",        });
+          action: "update",
+          session: whatsapp
+        });
 
         const sessionIndex = sessions.findIndex(s => s.id === whatsapp.id);
         if (sessionIndex === -1) {
@@ -559,7 +589,9 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         await whatsapp.update({ status: newState });
 
         io.emit("whatsappSession", {
-          action: "update",        });
+          action: "update",
+          session: whatsapp
+        });
       } catch (err) {
         logger.error(err, "Error on whatsapp change state event");
       }
@@ -568,10 +600,30 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     wbot.on("disconnected", async reason => {
       logger.info(`Disconnected session: ${sessionName}, reason: ${reason}`);
       try {
+        if (intentionalDisconnects.has(whatsapp.id)) {
+          intentionalDisconnects.delete(whatsapp.id);
+          removeSession(whatsapp.id);
+
+          await whatsapp.update({
+            status: "DISCONNECTED",
+            qrcode: "",
+            session: ""
+          });
+
+          io.emit("whatsappSession", {
+            action: "update",
+            session: whatsapp
+          });
+
+          return;
+        }
+
         await whatsapp.update({ status: "OPENING", session: "" });
 
         io.emit("whatsappSession", {
-          action: "update",        });
+          action: "update",
+          session: whatsapp
+        });
 
         logger.warn(
           `Session ${sessionName} disconnected. Restarting in 2 seconds...`
@@ -648,5 +700,6 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendSeen,
   fetchChatMessages
 };
+
 
 
