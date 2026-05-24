@@ -101,12 +101,15 @@ const initialCampaign = {
   name: "",
   message: "",
   audience: "contacts",
+  recipientType: "contacts",
   intervalPattern: "30",
   pauseAfter: 20,
   pauseMinutes: 5,
   whatsappId: "",
   contactIds: [],
-  tagIds: []
+  tagIds: [],
+  excludeTagIds: [],
+  tagAppliedLastDays: ""
 };
 
 const initialSchedule = {
@@ -143,6 +146,12 @@ const filterContactsByAudience = (contacts, audience) =>
     if (audience === "groups") return contact.isGroup;
     return true;
   });
+
+const contactHasAnyTag = (contact, tagIds) => {
+  if (!tagIds?.length) return false;
+  const selected = new Set(tagIds.map(Number));
+  return (contact.tags || []).some(tag => selected.has(Number(tag.id)));
+};
 
 const ContactPicker = ({
   classes,
@@ -297,11 +306,13 @@ const CampaignsSchedules = () => {
   };
 
   const handleCampaignAudienceChange = event => {
-    const audience = event.target.value;
+    const recipientType = event.target.value;
+    const audience = recipientType === "groups" ? "groups" : "contacts";
     const allowedContactIds = filterContactsByAudience(contacts, audience).map(contact => Number(contact.id));
 
     setCampaignForm(prev => ({
       ...prev,
+      recipientType,
       audience,
       contactIds: prev.contactIds.filter(contactId => allowedContactIds.includes(Number(contactId)))
     }));
@@ -336,6 +347,27 @@ const CampaignsSchedules = () => {
 
   const createCampaign = async () => {
     try {
+      let estimatedContacts = [];
+
+      if (campaignForm.recipientType === "contacts" || campaignForm.recipientType === "groups") {
+        estimatedContacts = contacts.filter(contact =>
+          campaignForm.contactIds.map(Number).includes(Number(contact.id))
+        );
+      } else {
+        estimatedContacts = contacts.filter(contact =>
+          !contact.isGroup && contactHasAnyTag(contact, campaignForm.tagIds)
+        );
+      }
+
+      const excluded = estimatedContacts.filter(contact =>
+        contactHasAnyTag(contact, campaignForm.excludeTagIds)
+      );
+      const total = estimatedContacts.length - excluded.length;
+      const confirmed = window.confirm(
+        `Resumo da campanha\n\nTipo de envio: ${campaignForm.recipientType === "tags" ? "Etiquetas" : campaignForm.recipientType === "groups" ? "Grupos de WhatsApp" : "Contatos"}\nEncontrados: ${estimatedContacts.length}\nRemovidos por etiquetas de exclusao: ${excluded.length}\nTotal que recebera: ${Math.max(total, 0)}\n\nConfira o resumo antes de enviar para evitar mensagens duplicadas ou contatos indesejados.`
+      );
+      if (!confirmed) return;
+
       await api.post("/campaigns", campaignForm);
       toast.success("Campanha iniciada.");
       setCampaignModalOpen(false);
@@ -594,41 +626,86 @@ const CampaignsSchedules = () => {
               <TextField fullWidth required margin="dense" variant="outlined" label="Nome" name="name" value={campaignForm.name} onChange={handleCampaignChange} />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <TextField select fullWidth margin="dense" variant="outlined" label="Público" name="audience" value={campaignForm.audience} onChange={handleCampaignAudienceChange}>
-                <MenuItem value="contacts">Somente contatos</MenuItem>
-                <MenuItem value="groups">Somente grupos</MenuItem>
-                <MenuItem value="all">Contatos e grupos</MenuItem>
+              <TextField select fullWidth margin="dense" variant="outlined" label="Tipo de destinatario" name="recipientType" value={campaignForm.recipientType} onChange={handleCampaignAudienceChange}>
+                <MenuItem value="contacts">Contatos</MenuItem>
+                <MenuItem value="tags">Etiquetas</MenuItem>
+                <MenuItem value="groups">Grupos de WhatsApp</MenuItem>
               </TextField>
+              <Typography variant="caption" color="textSecondary">
+                Escolha se a campanha sera enviada para contatos selecionados, contatos com etiquetas ou grupos de WhatsApp.
+              </Typography>
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <ContactPicker
-                classes={classes}
-                contacts={contacts}
-                audience={campaignForm.audience}
-                selectedIds={campaignForm.contactIds}
-                label="Contatos específicos"
-                onChange={contactIds => setCampaignForm(prev => ({ ...prev, contactIds }))}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                select
-                fullWidth
-                margin="dense"
-                variant="outlined"
-                label="Etiquetas"
-                name="tagIds"
-                value={campaignForm.tagIds}
-                onChange={handleCampaignChange}
-                SelectProps={{ multiple: true, renderValue: renderTagValue }}
-              >
-                {tags.map(tag => (
-                  <MenuItem key={tag.id} value={tag.id}>
-                    {tag.name}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Grid>
+            {campaignForm.recipientType !== "tags" && (
+              <Grid item xs={12} sm={6}>
+                <ContactPicker
+                  classes={classes}
+                  contacts={contacts}
+                  audience={campaignForm.recipientType === "groups" ? "groups" : "contacts"}
+                  selectedIds={campaignForm.contactIds}
+                  label={campaignForm.recipientType === "groups" ? "Grupos de WhatsApp" : "Contatos"}
+                  onChange={contactIds => setCampaignForm(prev => ({ ...prev, contactIds }))}
+                />
+                <Typography variant="caption" color="textSecondary">
+                  Marque os destinatarios que devem receber esta campanha.
+                </Typography>
+              </Grid>
+            )}
+            {campaignForm.recipientType === "tags" && (
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  select
+                  fullWidth
+                  margin="dense"
+                  variant="outlined"
+                  label="Etiquetas para envio"
+                  name="tagIds"
+                  value={campaignForm.tagIds}
+                  onChange={handleCampaignChange}
+                  SelectProps={{ multiple: true, renderValue: renderTagValue }}
+                >
+                  {tags.map(tag => (
+                    <MenuItem key={tag.id} value={tag.id}>
+                      {tag.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <Typography variant="caption" color="textSecondary">
+                  A campanha sera enviada para contatos que tenham pelo menos uma das etiquetas marcadas.
+                </Typography>
+              </Grid>
+            )}
+            {campaignForm.recipientType === "tags" && (
+              <Grid item xs={12} sm={6}>
+                <TextField fullWidth type="number" margin="dense" variant="outlined" label="Etiqueta aplicada nos ultimos dias" name="tagAppliedLastDays" value={campaignForm.tagAppliedLastDays} onChange={handleCampaignChange} placeholder="Ex: 7" />
+                <Typography variant="caption" color="textSecondary">
+                  Se preencher 7, envia apenas para contatos cuja etiqueta foi aplicada nos ultimos 7 dias.
+                </Typography>
+              </Grid>
+            )}
+            {campaignForm.recipientType === "tags" && (
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  select
+                  fullWidth
+                  margin="dense"
+                  variant="outlined"
+                  label="Nao enviar para contatos com estas etiquetas"
+                  name="excludeTagIds"
+                  value={campaignForm.excludeTagIds}
+                  onChange={handleCampaignChange}
+                  SelectProps={{ multiple: true, renderValue: renderTagValue }}
+                >
+                  {tags.map(tag => (
+                    <MenuItem key={tag.id} value={tag.id}>
+                      {tag.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <Typography variant="caption" color="textSecondary">
+                  Contatos com essas etiquetas nao receberao a campanha.
+                </Typography>
+              </Grid>
+            )}
             <Grid item xs={12} sm={4}>
               <TextField fullWidth type="number" margin="dense" variant="outlined" label="Pausar após envios" name="pauseAfter" value={campaignForm.pauseAfter} onChange={handleCampaignChange} />
             </Grid>

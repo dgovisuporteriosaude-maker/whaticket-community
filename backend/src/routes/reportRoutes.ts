@@ -7,5 +7,6 @@ const reportRoutes = Router();
 reportRoutes.get("/reports/dashboard", isAuth, ReportController.dashboard);
 reportRoutes.get("/reports/tickets/export", isAuth, ReportController.exportTickets);
 reportRoutes.get("/reports/conversations", isAuth, ReportController.conversationHistory);
+reportRoutes.get("/reports/satisfaction", isAuth, ReportController.satisfaction);
 
 export default reportRoutes;

@@ -142,21 +142,28 @@ const Dashboard = () => {
   const [historySearch, setHistorySearch] = useState("");
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [satisfaction, setSatisfaction] = useState({ summary: { total: 0, average: 0 }, responses: [] });
 
   const params = useMemo(() => ({ startDate, endDate }), [startDate, endDate]);
 
   useEffect(() => {
     const loadDashboard = async () => {
       try {
-        const { data } = await api.get("/reports/dashboard", { params });
+        const [{ data }, satisfactionResponse] = await Promise.all([
+          api.get("/reports/dashboard", { params }),
+          user?.profile === "admin"
+            ? api.get("/reports/satisfaction", { params })
+            : Promise.resolve({ data: { summary: { total: 0, average: 0 }, responses: [] } })
+        ]);
         setDashboard(data);
+        setSatisfaction(satisfactionResponse.data);
       } catch (err) {
         toastError(err);
       }
     };
 
     loadDashboard();
-  }, [params]);
+  }, [params, user?.profile]);
 
   const loadHistory = async () => {
     if (user?.profile !== "admin") return;
@@ -343,6 +350,51 @@ const Dashboard = () => {
             </Table>
           </Paper>
         </Grid>
+
+        {user?.profile === "admin" && (
+          <Grid item xs={12} md={6}>
+            <Paper className={classes.tablePanel}>
+              <div className={classes.panelHeader}>
+                <Typography variant="h6">Pesquisa de satisfação</Typography>
+                <Chip
+                  size="small"
+                  color="primary"
+                  label={`Média ${satisfaction.summary.average || 0}`}
+                />
+              </div>
+              <Typography variant="body2" color="textSecondary">
+                {satisfaction.summary.total || 0} resposta(s) no período.
+              </Typography>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Contato</TableCell>
+                    <TableCell>Atendente</TableCell>
+                    <TableCell>Categoria</TableCell>
+                    <TableCell>Motivo</TableCell>
+                    <TableCell align="right">Nota</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {(satisfaction.responses || []).slice(0, 8).map(row => (
+                    <TableRow key={row.id}>
+                      <TableCell>{row.contact?.name || "Contato"}</TableCell>
+                      <TableCell>{row.user?.name || "Sem atendente"}</TableCell>
+                      <TableCell>{row.category?.name || "Nao informada"}</TableCell>
+                      <TableCell>{row.closingReason?.name || "Nao informado"}</TableCell>
+                      <TableCell align="right">{row.rating}</TableCell>
+                    </TableRow>
+                  ))}
+                  {!(satisfaction.responses || []).length && (
+                    <TableRow>
+                      <TableCell colSpan={5}>Nenhuma resposta encontrada.</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </Paper>
+          </Grid>
+        )}
 
         {user?.profile === "admin" && (
           <Grid item xs={12} md={6}>

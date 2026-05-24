@@ -13,6 +13,7 @@ import Typography from "@material-ui/core/Typography";
 import Avatar from "@material-ui/core/Avatar";
 import Divider from "@material-ui/core/Divider";
 import Badge from "@material-ui/core/Badge";
+import Chip from "@material-ui/core/Chip";
 
 import { i18n } from "../../translate/i18n";
 
@@ -58,6 +59,8 @@ const useStyles = makeStyles(theme => ({
 	contactNameWrapper: {
 		display: "flex",
 		justifyContent: "space-between",
+		alignItems: "center",
+		gap: theme.spacing(1),
 	},
 
 	lastMessageTime: {
@@ -72,7 +75,9 @@ const useStyles = makeStyles(theme => ({
 	},
 
 	contactLastMessage: {
-		paddingRight: 20,
+		paddingRight: 8,
+		minWidth: 0,
+		flex: 1,
 	},
 
 	newMessagesCount: {
@@ -87,8 +92,9 @@ const useStyles = makeStyles(theme => ({
 	},
 
 	acceptButton: {
-		position: "absolute",
-		left: "50%",
+		flex: "none",
+		marginLeft: theme.spacing(1),
+		whiteSpace: "nowrap",
 	},
 
 	ticketQueueColor: {
@@ -114,6 +120,13 @@ const useStyles = makeStyles(theme => ({
 		borderRadius: 10,
 		fontSize: "0.9em"
 	},
+	aiTag: {
+		marginLeft: 8,
+		height: 20,
+		fontSize: 11,
+		background: "#263238",
+		color: "#fff",
+	},
 }));
 
 const TicketListItem = ({ ticket }) => {
@@ -133,9 +146,16 @@ const TicketListItem = ({ ticket }) => {
 	const handleAcepptTicket = async id => {
 		setLoading(true);
 		try {
+			const humanQueue = ticket.aiActive
+				? user?.queues?.find(queue => queue.id !== ticket.aiQueueId && queue.id !== ticket.queueId)
+				: null;
+
 			await api.put(`/tickets/${id}`, {
 				status: "open",
 				userId: user?.id,
+				...(ticket.aiActive
+					? { assumeAi: true, queueId: humanQueue?.id || null }
+					: {}),
 			});
 		} catch (err) {
 			setLoading(false);
@@ -157,7 +177,7 @@ const TicketListItem = ({ ticket }) => {
 				dense
 				button
 				onClick={e => {
-					if (ticket.status === "pending") return;
+					if (ticket.status === "pending" && !ticket.aiActive) return;
 					handleSelectTicket(ticket.id);
 				}}
 				selected={ticketId && +ticketId === ticket.id}
@@ -190,6 +210,9 @@ const TicketListItem = ({ ticket }) => {
 							>
 								{ticket.contact.name}
 							</Typography>
+							{ticket.aiActive && (
+								<Chip size="small" className={classes.aiTag} label="IA atendendo" />
+							)}
 							{ticket.status === "closed" && (
 								<Badge
 									className={classes.closedBadge}
@@ -251,7 +274,7 @@ const TicketListItem = ({ ticket }) => {
 						loading={loading}
 						onClick={e => handleAcepptTicket(ticket.id)}
 					>
-						{i18n.t("ticketsList.buttons.accept")}
+						{ticket.aiActive ? "Assumir atendimento" : i18n.t("ticketsList.buttons.accept")}
 					</ButtonWithSpinner>
 				)}
 			</ListItem>

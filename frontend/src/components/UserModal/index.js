@@ -30,6 +30,7 @@ import { i18n } from "../../translate/i18n";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import QueueSelect from "../QueueSelect";
+import MessageTemplateField from "../MessageTemplateField";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { Can } from "../Can";
 import useWhatsApps from "../../hooks/useWhatsApps";
@@ -266,14 +267,10 @@ const UserModal = ({ open, onClose, userId }) => {
 										</FormControl>
 									)}
 								/>
-								<Field
-									as={TextField}
+								<MessageTemplateField
+									formik
 									label="Saudacao de atendimento"
 									name="attendanceGreeting"
-									variant="outlined"
-									margin="dense"
-									fullWidth
-									multiline
 									rows={3}
 								/>
 							</DialogContent>

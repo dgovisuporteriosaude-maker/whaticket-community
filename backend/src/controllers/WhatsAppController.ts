@@ -8,6 +8,7 @@ import ListWhatsAppsService from "../services/WhatsappService/ListWhatsAppsServi
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import UpdateWhatsAppService from "../services/WhatsappService/UpdateWhatsAppService";
 import { whatsappProvider } from "../providers/WhatsApp";
+import CreateAuditLogService from "../services/AuditLogServices/CreateAuditLogService";
 
 interface WhatsappData {
   name: string;
@@ -45,6 +46,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     uraFlowId,
     queueIds
   });
+  await CreateAuditLogService({
+    req,
+    action: "create",
+    resource: "whatsapps",
+    resourceId: whatsapp.id,
+    afterData: whatsapp.toJSON()
+  });
 
   StartWhatsAppSession(whatsapp);
 
@@ -78,10 +86,20 @@ export const update = async (
 ): Promise<Response> => {
   const { whatsappId } = req.params;
   const whatsappData = req.body;
+  const currentWhatsapp = await ShowWhatsAppService(whatsappId);
+  const beforeData = currentWhatsapp.toJSON();
 
   const { whatsapp, oldDefaultWhatsapp } = await UpdateWhatsAppService({
     whatsappData,
     whatsappId
+  });
+  await CreateAuditLogService({
+    req,
+    action: "update",
+    resource: "whatsapps",
+    resourceId: whatsapp.id,
+    beforeData,
+    afterData: whatsapp.toJSON()
   });
 
   const io = getIO();
@@ -105,8 +123,17 @@ export const remove = async (
   res: Response
 ): Promise<Response> => {
   const { whatsappId } = req.params;
+  const whatsapp = await ShowWhatsAppService(whatsappId);
+  const beforeData = whatsapp.toJSON();
 
   await DeleteWhatsAppService(whatsappId);
+  await CreateAuditLogService({
+    req,
+    action: "delete",
+    resource: "whatsapps",
+    resourceId: whatsappId,
+    beforeData
+  });
   whatsappProvider.removeSession(+whatsappId);
 
   const io = getIO();

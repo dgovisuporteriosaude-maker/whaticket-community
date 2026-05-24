@@ -2,6 +2,7 @@ import AppError from "../../errors/AppError";
 import Contact from "../../models/Contact";
 import ContactCustomField from "../../models/ContactCustomField";
 import Tag from "../../models/Tag";
+import ContactTag from "../../models/ContactTag";
 
 interface ExtraInfo {
   id?: number;
@@ -64,6 +65,10 @@ const UpdateContactService = async ({
   if (tagIds) {
     const tags = await Tag.findAll({ where: { id: tagIds } });
     await contact.$set("tags", tags);
+    await ContactTag.update(
+      { appliedAt: new Date() },
+      { where: { contactId: contact.id, tagId: tagIds } }
+    );
   }
 
   await contact.reload({

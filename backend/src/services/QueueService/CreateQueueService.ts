@@ -5,7 +5,6 @@ import Queue from "../../models/Queue";
 interface QueueData {
   name: string;
   color: string;
-  greetingMessage?: string;
   useAI?: boolean;
   aiSettingId?: number | null;
 }

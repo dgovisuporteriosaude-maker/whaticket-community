@@ -31,6 +31,10 @@ class Tag extends Model<Tag> {
   @Column
   color: string;
 
+  @Default(false)
+  @Column
+  fixed: boolean;
+
   @BelongsToMany(() => Contact, () => ContactTag)
   contacts: Array<Contact & { ContactTag: ContactTag }>;
 

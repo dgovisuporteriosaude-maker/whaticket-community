@@ -42,8 +42,8 @@ const ListContactsService = async ({
       {
         model: Tag,
         as: "tags",
-        attributes: ["id", "name", "color"],
-        through: { attributes: [] },
+        attributes: ["id", "name", "color", "fixed"],
+        through: { attributes: ["appliedAt"] },
         where: tagIds.length ? { id: { [Op.in]: tagIds } } : undefined,
         required: tagIds.length > 0
       }

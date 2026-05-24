@@ -33,6 +33,18 @@ const parseScheduledAt = (value: string | Date): Date => {
   return date;
 };
 
+const validateIntervalPattern = (value: any): void => {
+  const pattern = String(value || "").trim();
+  if (!pattern) {
+    throw new AppError("Informe a sequencia de intervalos do agendamento.", 400);
+  }
+
+  const intervals = pattern.split(":").map(item => Number(item));
+  if (!intervals.length || intervals.some(item => !Number.isFinite(item) || item <= 0)) {
+    throw new AppError("A sequencia de intervalos deve conter apenas segundos maiores que zero. Ex: 10:20:30", 400);
+  }
+};
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const messages = await ScheduledMessage.findAll({
     include,
@@ -61,6 +73,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     throw new AppError("ERR_SCHEDULE_REQUIRED_FIELDS", 400);
   }
 
+  validateIntervalPattern(intervalPattern);
+
   const parsedScheduledAt = parseScheduledAt(scheduledAt);
 
   const selectedContactIds = [
@@ -70,6 +84,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   if (!selectedContactIds.length && !tagIds.length) {
     throw new AppError("ERR_SCHEDULE_RECIPIENTS_REQUIRED", 400);
+  }
+
+  if (!["all", "contacts", "groups"].includes(audience)) {
+    throw new AppError("Escolha o tipo de destinatario do agendamento.", 400);
   }
 
   const contactWhere: any =
@@ -157,6 +175,7 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (message !== undefined) allowedData.message = message;
   if (whatsappId !== undefined) allowedData.whatsappId = whatsappId || null;
   if (intervalPattern !== undefined) {
+    validateIntervalPattern(intervalPattern);
     allowedData.intervalPattern = intervalPattern || "30";
     allowedData.intervalSeconds = Number(parseInt(String(intervalPattern).split(":")[0], 10) || 30);
   }

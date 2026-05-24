@@ -34,6 +34,9 @@ class ContactTag extends Model<ContactTag> {
   @BelongsTo(() => Tag)
   tag: Tag;
 
+  @Column
+  appliedAt: Date;
+
   @CreatedAt
   createdAt: Date;
 

@@ -2,6 +2,7 @@ import { Request, Response, Router } from "express";
 
 import isAuth from "../middleware/isAuth";
 import * as CustomAdminController from "../controllers/CustomAdminController";
+import * as AuditLogController from "../controllers/AuditLogController";
 
 const customAdminRoutes = Router();
 
@@ -18,7 +19,8 @@ const resources = [
   { path: "/ura-flows", resource: "uraFlows" },
   { path: "/ura-options", resource: "uraOptions" },
   { path: "/ai-settings", resource: "aiSettings" },
-  { path: "/knowledge-base", resource: "knowledgeBaseArticles" }
+  { path: "/knowledge-base", resource: "knowledgeBaseArticles" },
+  { path: "/satisfaction-surveys", resource: "satisfactionSurveys" }
 ];
 
 resources.forEach(({ path, resource }) => {
@@ -27,6 +29,9 @@ resources.forEach(({ path, resource }) => {
   customAdminRoutes.put(`${path}/:id`, isAuth, bindResource(resource, "update"));
   customAdminRoutes.delete(`${path}/:id`, isAuth, bindResource(resource, "remove"));
 });
+
+customAdminRoutes.get("/audit-logs", isAuth, AuditLogController.index);
+customAdminRoutes.post("/ai-settings/:id/test", isAuth, CustomAdminController.testAiSetting);
 
 customAdminRoutes.get("/custom/:resource", isAuth, CustomAdminController.index);
 customAdminRoutes.post("/custom/:resource", isAuth, CustomAdminController.store);

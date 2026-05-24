@@ -8,13 +8,37 @@ import ShowTicketService from "./ShowTicketService";
 interface TicketData {
   status?: string;
   userId?: number;
-  queueId?: number;
+  queueId?: number | null;
   whatsappId?: number;
   categoryId?: number;
   closingReasonId?: number;
   closingNote?: string;
   aiActive?: boolean;
+  aiHandled?: boolean;
+  aiQueueId?: number | null;
+  aiStartedAt?: Date | null;
+  aiFinishedAt?: Date | null;
+  aiHumanHandoffAt?: Date | null;
+  aiHumanHandoffQueueId?: number | null;
+  aiHumanHandoffMessage?: string | null;
+  aiTaggerClassifiedAt?: Date | null;
+  aiAutoClosed?: boolean;
+  aiAutoClosedAt?: Date | null;
+  aiAutoCloseEnabled?: boolean;
+  aiAutoCloseMinutes?: number | null;
+  aiAutoCloseMessage?: string | null;
+  aiAutoCloseReasonId?: number | null;
+  aiAutoCloseOnlyIfNotHandedOff?: boolean;
   aiSettingId?: number | null;
+  aiHumanHandoffAlertSent?: boolean;
+  aiHandoffAlertEnabled?: boolean | null;
+  aiHandoffAlertTo?: string | null;
+  aiHandoffAlertMessage?: string | null;
+  lastAiQuestionType?: string | null;
+  lastAiQuestionOptions?: string | null;
+  lastAiQuestionAt?: Date | null;
+  lastAiQuestionAttempts?: number;
+  lastAiInteractionAt?: Date | null;
   uraFlowId?: number | null;
   uraMenuSentAt?: Date | null;
 }
@@ -43,7 +67,31 @@ const UpdateTicketService = async ({
     closingReasonId,
     closingNote,
     aiActive,
+    aiHandled,
+    aiQueueId,
+    aiStartedAt,
+    aiFinishedAt,
+    aiHumanHandoffAt,
+    aiHumanHandoffQueueId,
+    aiHumanHandoffMessage,
+    aiTaggerClassifiedAt,
+    aiAutoClosed,
+    aiAutoClosedAt,
+    aiAutoCloseEnabled,
+    aiAutoCloseMinutes,
+    aiAutoCloseMessage,
+    aiAutoCloseReasonId,
+    aiAutoCloseOnlyIfNotHandedOff,
     aiSettingId,
+    aiHumanHandoffAlertSent,
+    aiHandoffAlertEnabled,
+    aiHandoffAlertTo,
+    aiHandoffAlertMessage,
+    lastAiQuestionType,
+    lastAiQuestionOptions,
+    lastAiQuestionAt,
+    lastAiQuestionAttempts,
+    lastAiInteractionAt,
     uraFlowId,
     uraMenuSentAt
   } = ticketData;
@@ -51,8 +99,14 @@ const UpdateTicketService = async ({
   const ticket = await ShowTicketService(ticketId);
   await SetTicketMessagesAsRead(ticket);
 
-  if (status === "closed" && (!categoryId || !closingReasonId)) {
+  const closingByAiContext = status === "closed" && aiHandled === true && !aiAutoClosed;
+
+  if (status === "closed" && !ticket.isGroup && !aiAutoClosed && !closingByAiContext && (!categoryId || !closingReasonId)) {
     throw new AppError("ERR_CLOSING_FIELDS_REQUIRED", 400);
+  }
+
+  if (status === "closed" && !ticket.isGroup && (aiAutoClosed || closingByAiContext) && !closingReasonId) {
+    throw new AppError("ERR_CLOSING_REASON_REQUIRED", 400);
   }
 
   if (whatsappId && ticket.whatsappId !== whatsappId) {
@@ -67,6 +121,7 @@ const UpdateTicketService = async ({
   }
 
   const shouldDisableBot = status === "closed" || (status === "open" && !!userId);
+  const disableBotAt = shouldDisableBot && ticket.aiActive ? new Date() : aiFinishedAt;
 
   await ticket.update({
     status,
@@ -76,7 +131,31 @@ const UpdateTicketService = async ({
     closingReasonId,
     closingNote,
     aiActive: shouldDisableBot ? false : aiActive,
+    aiHandled,
+    aiQueueId,
+    aiStartedAt,
+    aiFinishedAt: disableBotAt,
+    aiHumanHandoffAt,
+    aiHumanHandoffQueueId,
+    aiHumanHandoffMessage,
+    aiTaggerClassifiedAt,
+    aiAutoClosed,
+    aiAutoClosedAt,
+    aiAutoCloseEnabled,
+    aiAutoCloseMinutes,
+    aiAutoCloseMessage,
+    aiAutoCloseReasonId,
+    aiAutoCloseOnlyIfNotHandedOff,
     aiSettingId: shouldDisableBot ? null : aiSettingId,
+    aiHumanHandoffAlertSent,
+    aiHandoffAlertEnabled,
+    aiHandoffAlertTo,
+    aiHandoffAlertMessage,
+    lastAiQuestionType: shouldDisableBot ? null : lastAiQuestionType,
+    lastAiQuestionOptions: shouldDisableBot ? null : lastAiQuestionOptions,
+    lastAiQuestionAt: shouldDisableBot ? null : lastAiQuestionAt,
+    lastAiQuestionAttempts: shouldDisableBot ? 0 : lastAiQuestionAttempts,
+    lastAiInteractionAt,
     uraFlowId,
     uraMenuSentAt
   });

@@ -14,6 +14,15 @@ class AiSetting extends Model<AiSetting> {
   @Column
   name: string;
 
+  @Column
+  companyName: string;
+
+  @Column
+  serviceType: string;
+
+  @Column(DataType.TEXT)
+  behaviorPrompt: string;
+
   @Default("openai")
   @Column
   provider: string;
@@ -39,6 +48,53 @@ class AiSetting extends Model<AiSetting> {
   @Default(true)
   @Column
   transferToHumanOnFailure: boolean;
+
+  @Column
+  aiQueueId: number;
+
+  @Default(false)
+  @Column
+  humanHandoffEnabled: boolean;
+
+  @Column
+  humanHandoffQueueId: number;
+
+  @Column(DataType.TEXT)
+  humanHandoffMessage: string;
+
+  @Default(false)
+  @Column
+  humanHandoffAlertEnabled: boolean;
+
+  @Column
+  humanHandoffAlertTo: string;
+
+  @Column(DataType.TEXT)
+  humanHandoffAlertMessage: string;
+
+  @Default(false)
+  @Column
+  autoCloseEnabled: boolean;
+
+  @Column
+  autoCloseMinutes: number;
+
+  @Column(DataType.TEXT)
+  autoCloseMessage: string;
+
+  @Column
+  autoCloseReasonId: number;
+
+  @Default(true)
+  @Column
+  autoCloseOnlyIfNotHandedOff: boolean;
+
+  @Default(2)
+  @Column
+  confirmationMaxAttempts: number;
+
+  @Column(DataType.TEXT)
+  confirmationFailureMessage: string;
 
   @Default(false)
   @Column

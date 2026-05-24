@@ -1,6 +1,7 @@
 import AppError from "../../errors/AppError";
 import Contact from "../../models/Contact";
 import Tag from "../../models/Tag";
+import ContactTag from "../../models/ContactTag";
 
 interface ExtraInfo {
   name: string;
@@ -46,6 +47,10 @@ const CreateContactService = async ({
   if (tagIds.length) {
     const tags = await Tag.findAll({ where: { id: tagIds } });
     await contact.$set("tags", tags);
+    await ContactTag.update(
+      { appliedAt: new Date() },
+      { where: { contactId: contact.id, tagId: tagIds } }
+    );
   }
 
   await contact.reload({ include: ["extraInfo", "tags"] });

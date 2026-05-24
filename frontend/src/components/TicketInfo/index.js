@@ -1,6 +1,6 @@
 import React from "react";
 
-import { Avatar, CardHeader } from "@material-ui/core";
+import { Avatar, CardHeader, Chip } from "@material-ui/core";
 
 import { i18n } from "../../translate/i18n";
 
@@ -12,7 +12,18 @@ const TicketInfo = ({ contact, ticket, onClick }) => {
 			titleTypographyProps={{ noWrap: true }}
 			subheaderTypographyProps={{ noWrap: true }}
 			avatar={<Avatar src={contact.profilePicUrl} alt="contact_image" />}
-			title={`${contact.name} #${ticket.id}`}
+			title={
+				<span>
+					{`${contact.name} #${ticket.id}`}
+					{ticket.aiActive && (
+						<Chip
+							size="small"
+							label="Atendimento com IA"
+							style={{ marginLeft: 8, height: 22, background: "#263238", color: "#fff" }}
+						/>
+					)}
+				</span>
+			}
 			subheader={
 				ticket.user &&
 				`${i18n.t("messagesList.header.assignedTo")} ${ticket.user.name}`

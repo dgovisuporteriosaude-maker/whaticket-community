@@ -37,6 +37,43 @@ class UraOption extends Model<UraOption> {
   @Column
   targetQueueId: number;
 
+  @Default(false)
+  @Column
+  aiHumanHandoffEnabled: boolean;
+
+  @Column
+  aiHumanHandoffQueueId: number;
+
+  @Column(DataType.TEXT)
+  aiHumanHandoffMessage: string;
+
+  @Default(false)
+  @Column
+  aiAutoCloseEnabled: boolean;
+
+  @Column
+  aiAutoCloseMinutes: number;
+
+  @Column(DataType.TEXT)
+  aiAutoCloseMessage: string;
+
+  @Column
+  aiAutoCloseReasonId: number;
+
+  @Default(true)
+  @Column
+  aiAutoCloseOnlyIfNotHandedOff: boolean;
+
+  @Default(false)
+  @Column
+  aiHandoffAlertEnabled: boolean;
+
+  @Column
+  aiHandoffAlertTo: string;
+
+  @Column(DataType.TEXT)
+  aiHandoffAlertMessage: string;
+
   @Default(0)
   @Column
   order: number;

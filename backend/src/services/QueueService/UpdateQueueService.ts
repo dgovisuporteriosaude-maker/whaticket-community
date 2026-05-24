@@ -7,7 +7,6 @@ import ShowQueueService from "./ShowQueueService";
 interface QueueData {
   name?: string;
   color?: string;
-  greetingMessage?: string;
   useAI?: boolean;
   aiSettingId?: number | null;
 }
@@ -67,6 +66,7 @@ const UpdateQueueService = async (
 
   const queue = await ShowQueueService(queueId);
 
+  delete (queueData as any).greetingMessage;
   await queue.update(queueData);
 
   return queue;

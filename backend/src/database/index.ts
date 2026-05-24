@@ -22,6 +22,10 @@ import CampaignContact from "../models/CampaignContact";
 import ScheduledMessage from "../models/ScheduledMessage";
 import Tag from "../models/Tag";
 import ContactTag from "../models/ContactTag";
+import AiTaggerHistory from "../models/AiTaggerHistory";
+import SatisfactionSurvey from "../models/SatisfactionSurvey";
+import SatisfactionSurveyResponse from "../models/SatisfactionSurveyResponse";
+import AuditLog from "../models/AuditLog";
 
 
 // eslint-disable-next-line
@@ -53,7 +57,11 @@ const models = [
   CampaignContact,
   ScheduledMessage,
   Tag,
-  ContactTag
+  ContactTag,
+  AiTaggerHistory,
+  SatisfactionSurvey,
+  SatisfactionSurveyResponse,
+  AuditLog
 ];
 
 sequelize.addModels(models);

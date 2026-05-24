@@ -3,13 +3,15 @@ import { Op } from "sequelize";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
 import ShowTicketService from "./ShowTicketService";
+import { shouldUseTicketForSatisfactionResponse } from "../SatisfactionSurveyServices/SatisfactionSurveyService";
 
 const FindOrCreateTicketService = async (
   contact: Contact,
   whatsappId: number,
   unreadMessages: number,
   groupContact?: Contact,
-  fromMe = false
+  fromMe = false,
+  incomingBody?: string
 ): Promise<Ticket> => {
   let ticket = await Ticket.findOne({
     where: {
@@ -35,11 +37,31 @@ const FindOrCreateTicketService = async (
     });
 
     if (ticket) {
+      if (await shouldUseTicketForSatisfactionResponse(ticket, incomingBody)) {
+        return ShowTicketService(ticket.id);
+      }
+
+      if (
+        ticket.satisfactionSurveySentAt &&
+        !ticket.satisfactionSurveyAnsweredAt &&
+        ticket.status === "closed"
+      ) {
+        ticket = null;
+      }
+    }
+
+    if (ticket) {
       await ticket.update({
         status: "pending",
         userId: null,
         aiActive: false,
         aiSettingId: null,
+        aiQueueId: null,
+        aiFinishedAt: new Date(),
+        lastAiQuestionType: null,
+        lastAiQuestionOptions: null,
+        lastAiQuestionAt: null,
+        lastAiQuestionAttempts: 0,
         uraFlowId: null,
         uraMenuSentAt: null,
         queueId: null,
@@ -61,6 +83,20 @@ const FindOrCreateTicketService = async (
     });
 
     if (ticket) {
+      if (await shouldUseTicketForSatisfactionResponse(ticket, incomingBody)) {
+        return ShowTicketService(ticket.id);
+      }
+
+      if (
+        ticket.satisfactionSurveySentAt &&
+        !ticket.satisfactionSurveyAnsweredAt &&
+        ticket.status === "closed"
+      ) {
+        ticket = null;
+      }
+    }
+
+    if (ticket) {
       await ticket.update({
         status: "pending",
         userId: null,
@@ -70,6 +106,12 @@ const FindOrCreateTicketService = async (
         closingNote: null,
         aiActive: false,
         aiSettingId: null,
+        aiQueueId: null,
+        aiFinishedAt: new Date(),
+        lastAiQuestionType: null,
+        lastAiQuestionOptions: null,
+        lastAiQuestionAt: null,
+        lastAiQuestionAttempts: 0,
         uraFlowId: null,
         uraMenuSentAt: null,
         unreadMessages

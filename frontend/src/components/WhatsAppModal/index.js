@@ -23,6 +23,7 @@ import api from "../../services/api";
 import { i18n } from "../../translate/i18n";
 import toastError from "../../errors/toastError";
 import QueueSelect from "../QueueSelect";
+import MessageTemplateField from "../MessageTemplateField";
 
 const useStyles = makeStyles(theme => ({
 	root: {
@@ -197,13 +198,10 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 									</Field>
 								</div>
 								<div>
-									<Field
-										as={TextField}
+									<MessageTemplateField
+										formik
 										label={i18n.t("queueModal.form.greetingMessage")}
-										type="greetingMessage"
-										multiline
 										rows={5}
-										fullWidth
 										name="greetingMessage"
 										error={
 											touched.greetingMessage && Boolean(errors.greetingMessage)
@@ -211,18 +209,13 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 										helperText={
 											touched.greetingMessage && errors.greetingMessage
 										}
-										variant="outlined"
-										margin="dense"
 									/>
 								</div>
 								<div>
-									<Field
-										as={TextField}
+									<MessageTemplateField
+										formik
 										label={i18n.t("whatsappModal.form.farewellMessage")}
-										type="farewellMessage"
-										multiline
 										rows={5}
-										fullWidth
 										name="farewellMessage"
 										error={
 											touched.farewellMessage && Boolean(errors.farewellMessage)
@@ -230,8 +223,6 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 										helperText={
 											touched.farewellMessage && errors.farewellMessage
 										}
-										variant="outlined"
-										margin="dense"
 									/>
 								</div>
 								<QueueSelect

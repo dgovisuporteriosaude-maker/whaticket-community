@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 
 import * as Yup from "yup";
 import { Formik, Form, Field } from "formik";
@@ -63,7 +63,6 @@ const QueueSchema = Yup.object().shape({
 		.max(50, "Too Long!")
 		.required("Required"),
 	color: Yup.string().min(3, "Too Short!").max(9, "Too Long!").required(),
-	greetingMessage: Yup.string(),
 });
 
 const QueueModal = ({ open, onClose, queueId }) => {
@@ -72,7 +71,6 @@ const QueueModal = ({ open, onClose, queueId }) => {
 	const initialState = {
 		name: "",
 		color: "",
-		greetingMessage: "",
 		useAI: false,
 		aiSettingId: "",
 	};
@@ -80,7 +78,6 @@ const QueueModal = ({ open, onClose, queueId }) => {
 	const [colorPickerModalOpen, setColorPickerModalOpen] = useState(false);
 	const [queue, setQueue] = useState(initialState);
 	const [aiSettings, setAiSettings] = useState([]);
-	const greetingRef = useRef();
 
 	useEffect(() => {
 		const fetchAiSettings = async () => {
@@ -112,7 +109,6 @@ const QueueModal = ({ open, onClose, queueId }) => {
 			setQueue({
 				name: "",
 				color: "",
-				greetingMessage: "",
 				useAI: false,
 				aiSettingId: "",
 			});
@@ -182,7 +178,6 @@ const QueueModal = ({ open, onClose, queueId }) => {
 									id="color"
 									onFocus={() => {
 										setColorPickerModalOpen(true);
-										greetingRef.current.focus();
 									}}
 									error={touched.color && Boolean(errors.color)}
 									helperText={touched.color && errors.color}
@@ -218,26 +213,6 @@ const QueueModal = ({ open, onClose, queueId }) => {
 										});
 									}}
 								/>
-								<div>
-									<Field
-										as={TextField}
-										label={i18n.t("queueModal.form.greetingMessage")}
-										type="greetingMessage"
-										multiline
-										inputRef={greetingRef}
-										rows={5}
-										fullWidth
-										name="greetingMessage"
-										error={
-											touched.greetingMessage && Boolean(errors.greetingMessage)
-										}
-										helperText={
-											touched.greetingMessage && errors.greetingMessage
-										}
-										variant="outlined"
-										margin="dense"
-									/>
-								</div>
 								<FormControlLabel
 									control={
 										<Field

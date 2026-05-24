@@ -7,6 +7,7 @@ import Queue from "../models/Queue";
 import User from "../models/User";
 import TicketCategory from "../models/TicketCategory";
 import ClosingReason from "../models/ClosingReason";
+import SatisfactionSurveyResponse from "../models/SatisfactionSurveyResponse";
 import AppError from "../errors/AppError";
 
 const parseDateRange = (req: Request) => {
@@ -190,4 +191,31 @@ export const conversationHistory = async (req: Request, res: Response): Promise<
   });
 
   return res.json(tickets);
+};
+
+export const satisfaction = async (req: Request, res: Response): Promise<Response> => {
+  requireAdmin(req);
+
+  const { start, end } = parseDateRange(req);
+  const rows = await SatisfactionSurveyResponse.findAll({
+    where: { createdAt: { [Op.between]: [+start, +end] } } as any,
+    include: [
+      { model: Contact, as: "contact", attributes: ["name", "number"] },
+      { model: Queue, as: "queue", attributes: ["name"] },
+      { model: User, as: "user", attributes: ["name"] },
+      { model: TicketCategory, as: "category", attributes: ["name"] },
+      { model: ClosingReason, as: "closingReason", attributes: ["name"] }
+    ],
+    order: [["createdAt", "DESC"]]
+  });
+
+  const total = rows.length;
+  const average = total
+    ? rows.reduce((sum, row) => sum + Number(row.rating || 0), 0) / total
+    : 0;
+
+  return res.json({
+    summary: { total, average: Number(average.toFixed(2)) },
+    responses: rows
+  });
 };

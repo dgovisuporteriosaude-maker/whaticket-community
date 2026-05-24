@@ -9,7 +9,8 @@ import {
   BelongsTo,
   HasMany,
   AutoIncrement,
-  Default
+  Default,
+  DataType
 } from "sequelize-typescript";
 
 import Contact from "./Contact";
@@ -104,8 +105,95 @@ class Ticket extends Model<Ticket> {
   @Column
   aiActive: boolean;
 
+  @Default(false)
+  @Column
+  aiHandled: boolean;
+
+  @Column
+  aiHumanHandoffAt: Date;
+
+  @Column
+  aiHumanHandoffQueueId: number;
+
+  @Column(DataType.TEXT)
+  aiHumanHandoffMessage: string;
+
+  @Column
+  aiTaggerClassifiedAt: Date;
+
+  @Default(false)
+  @Column
+  aiHumanHandoffAlertSent: boolean;
+
+  @Column
+  aiHandoffAlertEnabled: boolean;
+
+  @Column
+  aiHandoffAlertTo: string;
+
+  @Column(DataType.TEXT)
+  aiHandoffAlertMessage: string;
+
+  @Default(false)
+  @Column
+  aiAutoClosed: boolean;
+
+  @Column
+  aiAutoClosedAt: Date;
+
+  @Default(false)
+  @Column
+  aiAutoCloseEnabled: boolean;
+
+  @Column
+  aiAutoCloseMinutes: number;
+
+  @Column(DataType.TEXT)
+  aiAutoCloseMessage: string;
+
+  @Column
+  aiAutoCloseReasonId: number;
+
+  @Default(true)
+  @Column
+  aiAutoCloseOnlyIfNotHandedOff: boolean;
+
   @Column
   aiSettingId: number;
+
+  @Column
+  aiQueueId: number;
+
+  @Column
+  aiStartedAt: Date;
+
+  @Column
+  aiFinishedAt: Date;
+
+  @Column
+  lastAiQuestionType: string;
+
+  @Column
+  lastAiQuestionOptions: string;
+
+  @Column
+  lastAiQuestionAt: Date;
+
+  @Default(0)
+  @Column
+  lastAiQuestionAttempts: number;
+
+  @Column
+  lastAiInteractionAt: Date;
+
+  @Column
+  satisfactionSurveyId: number;
+
+  @Column
+  satisfactionSurveySentAt: Date;
+
+  @Column
+  satisfactionSurveyAnsweredAt: Date;
 
   @HasMany(() => Message)
   messages: Message[];

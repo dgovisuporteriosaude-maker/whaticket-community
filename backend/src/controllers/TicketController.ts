@@ -8,7 +8,14 @@ import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
+import CreateMessageService from "../services/MessageServices/CreateMessageService";
+import {
+  buildSatisfactionSurveyMessage,
+  getActiveSatisfactionSurvey,
+  markSatisfactionSurveySent
+} from "../services/SatisfactionSurveyServices/SatisfactionSurveyService";
 import formatBody from "../helpers/Mustache";
+import FormatTicketTemplate from "../helpers/FormatTicketTemplate";
 
 type IndexQuery = {
   searchParam: string;
@@ -23,12 +30,14 @@ type IndexQuery = {
 interface TicketData {
   contactId: number;
   status: string;
-  queueId: number;
+  queueId: number | null;
   userId: number;
   categoryId?: number;
   closingReasonId?: number;
   closingNote?: string;
   sendFarewellMessage?: boolean;
+  sendSatisfactionSurvey?: boolean;
+  assumeAi?: boolean;
 }
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -98,6 +107,20 @@ export const update = async (
     ticketId
   });
 
+  if (ticketData.assumeAi === true) {
+    await CreateMessageService({
+      messageData: {
+        id: `ai-assumed-${ticket.id}-${Date.now()}`,
+        ticketId: ticket.id,
+        body: `Atendimento assumido por ${ticket.user?.name || "usuario"}. IA desativada para este atendimento.`,
+        fromMe: true,
+        read: true,
+        mediaType: "chat",
+        ack: 1
+      }
+    });
+  }
+
   if (
     ticketData.status === "open" &&
     !!ticketData.userId &&
@@ -113,20 +136,38 @@ export const update = async (
     });
   }
 
-  if (ticket.status === "closed" && ticketData.sendFarewellMessage === true) {
+  if (ticket.status === "closed" && oldStatus !== "closed") {
     const whatsapp = await ShowWhatsAppService(ticket.whatsappId);
 
     const closingReason = ticket.closingReason;
     const farewellMessage =
-      closingReason?.sendFarewellMessage && closingReason.farewellMessage
+      ticketData.sendFarewellMessage === true &&
+      closingReason?.sendFarewellMessage &&
+      closingReason.farewellMessage
         ? closingReason.farewellMessage
-        : whatsapp.farewellMessage;
+        : ticketData.sendFarewellMessage === true
+          ? whatsapp.farewellMessage
+          : null;
+
+    const survey = await getActiveSatisfactionSurvey();
+    const shouldSendSurvey =
+      !!survey &&
+      !ticket.isGroup &&
+      (survey.sendMode === "always" || ticketData.sendSatisfactionSurvey === true);
 
     if (farewellMessage) {
       await SendWhatsAppMessage({
-        body: formatBody(farewellMessage, ticket.contact),
+        body: await FormatTicketTemplate(formatBody(farewellMessage, ticket.contact), ticket),
         ticket
       });
+    }
+
+    if (survey && shouldSendSurvey) {
+      await SendWhatsAppMessage({
+        body: await buildSatisfactionSurveyMessage(ticket, survey),
+        ticket
+      });
+      await markSatisfactionSurveySent(ticket, survey);
     }
   }
 

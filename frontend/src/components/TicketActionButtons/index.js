@@ -45,9 +45,11 @@ const TicketActionButtons = ({ ticket }) => {
 		closingReasonId: "",
 		closingNote: "",
 		sendFarewellMessage: false,
+		sendSatisfactionSurvey: false,
 	});
 	const [categories, setCategories] = useState([]);
 	const [closingReasons, setClosingReasons] = useState([]);
+	const [satisfactionSurvey, setSatisfactionSurvey] = useState(null);
 	const ticketOptionsMenuOpen = Boolean(anchorEl);
 	const { user } = useContext(AuthContext);
 
@@ -59,13 +61,14 @@ const TicketActionButtons = ({ ticket }) => {
 		setAnchorEl(null);
 	};
 
-	const handleUpdateTicketStatus = async (e, status, userId) => {
+	const handleUpdateTicketStatus = async (e, status, userId, extraData = {}) => {
 		setLoading(true);
 		try {
 			await api.put(`/tickets/${ticket.id}`, {
 				status: status,
 				userId: userId || null,
 				...(status === "closed" ? closingData : {}),
+				...extraData,
 			});
 
 			setLoading(false);
@@ -84,18 +87,22 @@ const TicketActionButtons = ({ ticket }) => {
 	const handleOpenClosingModal = async () => {
 		setLoading(true);
 		try {
-			const [{ data: categoriesData }, { data: reasonsData }] = await Promise.all([
+			const [{ data: categoriesData }, { data: reasonsData }, { data: surveysData }] = await Promise.all([
 				api.get("/ticket-categories"),
 				api.get("/closing-reasons"),
+				api.get("/satisfaction-surveys"),
 			]);
 
 			setCategories(categoriesData);
 			setClosingReasons(reasonsData);
+			const activeSurvey = (surveysData || []).find(survey => survey.active !== false && survey.sendMode !== "disabled");
+			setSatisfactionSurvey(activeSurvey || null);
 			setClosingData({
 				categoryId: "",
 				closingReasonId: "",
 				closingNote: "",
 				sendFarewellMessage: false,
+				sendSatisfactionSurvey: activeSurvey?.sendMode === "always",
 			});
 			setClosingModalOpen(true);
 		} catch (err) {
@@ -113,7 +120,16 @@ const TicketActionButtons = ({ ticket }) => {
 		}));
 	};
 
-	const canCloseTicket = closingData.categoryId && closingData.closingReasonId;
+	const isGroupTicket = !!ticket?.isGroup;
+	const canCloseTicket = isGroupTicket || (closingData.categoryId && closingData.closingReasonId);
+
+	const handleAssumeAiTicket = async e => {
+		const humanQueue = user?.queues?.find(queue => queue.id !== ticket.aiQueueId && queue.id !== ticket.queueId);
+		await handleUpdateTicketStatus(e, "open", user?.id, {
+			assumeAi: true,
+			queueId: humanQueue?.id || null,
+		});
+	};
 
 	return (
 		<div className={classes.actionButtons}>
@@ -129,6 +145,17 @@ const TicketActionButtons = ({ ticket }) => {
 			)}
 			{ticket.status === "open" && (
 				<>
+					{ticket.aiActive && (
+						<ButtonWithSpinner
+							loading={loading}
+							size="small"
+							variant="contained"
+							color="primary"
+							onClick={handleAssumeAiTicket}
+						>
+							Assumir atendimento
+						</ButtonWithSpinner>
+					)}
 					<ButtonWithSpinner
 						loading={loading}
 						startIcon={<Replay />}
@@ -179,7 +206,7 @@ const TicketActionButtons = ({ ticket }) => {
 					<TextField
 						select
 						fullWidth
-						required
+						required={!isGroupTicket}
 						margin="dense"
 						variant="outlined"
 						label="Categoria"
@@ -196,7 +223,7 @@ const TicketActionButtons = ({ ticket }) => {
 					<TextField
 						select
 						fullWidth
-						required
+						required={!isGroupTicket}
 						margin="dense"
 						variant="outlined"
 						label="Motivo de fechamento"
@@ -232,6 +259,24 @@ const TicketActionButtons = ({ ticket }) => {
 						}
 						label="Enviar mensagem de encerramento"
 					/>
+					{satisfactionSurvey && !isGroupTicket && (
+						<FormControlLabel
+							control={
+								<Checkbox
+									color="primary"
+									name="sendSatisfactionSurvey"
+									checked={closingData.sendSatisfactionSurvey}
+									disabled={satisfactionSurvey.sendMode === "always"}
+									onChange={handleClosingChange}
+								/>
+							}
+							label={
+								satisfactionSurvey.sendMode === "always"
+									? "Enviar pesquisa de satisfação automaticamente"
+									: "Enviar pesquisa de satisfação"
+							}
+						/>
+					)}
 				</DialogContent>
 				<DialogActions>
 					<ButtonWithSpinner
