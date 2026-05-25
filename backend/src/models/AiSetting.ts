@@ -35,6 +35,9 @@ class AiSetting extends Model<AiSetting> {
   apiKey: string;
 
   @Column(DataType.TEXT)
+  baseUrl: string;
+
+  @Column(DataType.TEXT)
   systemPrompt: string;
 
   @Default(0.2)

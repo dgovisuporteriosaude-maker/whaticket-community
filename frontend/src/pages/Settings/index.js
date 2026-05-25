@@ -340,6 +340,11 @@ const resources = [
 			{ name: "model", label: "Modelo" },
 			{ name: "apiKey", label: "Chave da API" },
 			{
+				name: "baseUrl",
+				label: "Base URL personalizada",
+				helperText: "Opcional. Use somente se seu provedor exigir um endpoint diferente do padrao."
+			},
+			{
 				name: "systemPrompt",
 				label: "Instrucoes adicionais",
 				multiline: true,
@@ -445,11 +450,22 @@ const getColumnLabel = (resource, col) => {
 	return field?.label || col;
 };
 
-const parseTagText = value =>
-	String(value || "")
+const parseTagText = value => {
+	if (Array.isArray(value)) {
+		return value
+			.map(item => String(item || "").trim())
+			.filter(Boolean);
+	}
+
+	if (value === null || value === undefined) return [];
+
+	return String(value)
 		.split(",")
 		.map(item => item.trim())
 		.filter(Boolean);
+};
+
+const formatTagText = value => parseTagText(value).join(", ");
 
 const SettingTextField = ({ name, getSettingValue, onChangeSetting, ...props }) => {
 	const [value, setValue] = useState("");
@@ -673,7 +689,6 @@ const ResourcePanel = ({ resource, classes }) => {
 	const [relations, setRelations] = useState({});
 	const [modalOpen, setModalOpen] = useState(false);
 	const [form, setForm] = useState({});
-	const [tagInputs, setTagInputs] = useState({});
 	const [testingApi, setTestingApi] = useState(false);
 
 	const loadRows = async () => {
@@ -725,51 +740,40 @@ const ResourcePanel = ({ resource, classes }) => {
 	const openCreate = () => {
 		const nextForm = {};
 		resource.fields.forEach(field => {
-			nextForm[field.name] = defaultValue(field);
+			nextForm[field.name] = field.type === "tags" ? "" : defaultValue(field);
 		});
 		setForm(nextForm);
-		setTagInputs({});
 		setModalOpen(true);
 	};
 
 	const openEdit = row => {
 		const nextForm = {};
 		resource.fields.forEach(field => {
-			nextForm[field.name] =
-				row[field.name] === null || row[field.name] === undefined
-					? defaultValue(field)
-					: row[field.name];
+			const value = row[field.name] === null || row[field.name] === undefined
+				? defaultValue(field)
+				: row[field.name];
+			nextForm[field.name] = field.type === "tags" ? formatTagText(value) : value;
 		});
 		nextForm.id = row.id;
 		setForm(nextForm);
-		setTagInputs({});
 		setModalOpen(true);
 	};
 
 	const handleChange = (name, value) => {
 		setForm(prev => {
-			const nextForm = { ...prev, [name]: value };
+			const nextForm = {
+				...prev,
+				[name]: value
+			};
 
 			if (
 				resource.endpoint === "/ai-settings" &&
-				name === "provider" &&
-				(!prev.model || Object.values(defaultModelsByProvider).includes(prev.model))
+				name === "provider"
 			) {
 				nextForm.model = defaultModelsByProvider[value] || "";
 			}
 
 			return nextForm;
-		});
-	};
-
-	const addTagValue = (fieldName, rawValue) => {
-		const tag = String(rawValue || "").trim();
-		if (!tag) return;
-
-		setForm(prev => {
-			const tags = parseTagText(prev[fieldName]);
-			if (tags.some(item => item.toLowerCase() === tag.toLowerCase())) return prev;
-			return { ...prev, [fieldName]: [...tags, tag].join(", ") };
 		});
 	};
 
@@ -782,27 +786,35 @@ const ResourcePanel = ({ resource, classes }) => {
 		}));
 	};
 
-	const handleTagInputKeyDown = (event, fieldName) => {
-		if (event.key !== "Enter" && event.key !== ",") return;
-
-		event.preventDefault();
-		event.stopPropagation();
-		addTagValue(fieldName, tagInputs[fieldName]);
-		setTagInputs(prev => ({ ...prev, [fieldName]: "" }));
+	const commitTagValue = fieldName => {
+		setForm(prev => ({
+			...prev,
+			[fieldName]: formatTagText(prev[fieldName])
+		}));
 	};
 
 	const save = async () => {
 		try {
+			const payload = { ...form };
+			resource.fields
+				.filter(field => field.type === "tags")
+				.forEach(field => {
+					payload[field.name] = formatTagText(payload[field.name]);
+				});
+
 			if (form.id) {
-				await api.put(`${resource.endpoint}/${form.id}`, form);
+				await api.put(`${resource.endpoint}/${form.id}`, payload);
 			} else {
-				await api.post(resource.endpoint, form);
+				await api.post(resource.endpoint, payload);
 			}
 
 			toast.success("Registro salvo.");
 			setModalOpen(false);
 			loadRows();
 		} catch (err) {
+			if (resource.endpoint === "/knowledge-base") {
+				toast.error("Nao foi possivel salvar as palavras-chave.");
+			}
 			toastError(err);
 		}
 	};
@@ -828,10 +840,14 @@ const ResourcePanel = ({ resource, classes }) => {
 		setTestingApi(true);
 		try {
 			const { data } = await api.post(`${resource.endpoint}/${form.id}/test`);
-			if (data.ok) {
-				toast.success(data.message || "API da IA funcionando.");
+			if (data.ok || data.success) {
+				toast.success(
+					data.responseText
+						? `API da IA funcionando: ${data.responseText}`
+						: data.message || "API da IA funcionando."
+				);
 			} else {
-				const details = [data.message, data.status ? `Status ${data.status}` : "", data.code]
+				const details = [data.errorMessage || data.message, data.statusCode ? `Status ${data.statusCode}` : "", data.code]
 					.filter(Boolean)
 					.join(" - ");
 				toast.error(details || "A API da IA nao respondeu corretamente.");
@@ -976,15 +992,16 @@ const ResourcePanel = ({ resource, classes }) => {
 											margin="dense"
 											variant="outlined"
 											label={field.label}
-											placeholder="Digite e pressione Enter"
-											value={tagInputs[field.name] || ""}
-											onChange={event =>
-												setTagInputs(prev => ({
-													...prev,
-													[field.name]: event.target.value
-												}))
-											}
-											onKeyDownCapture={event => handleTagInputKeyDown(event, field.name)}
+											placeholder="Ex: valor, orçamento, pacote"
+											value={form[field.name] || ""}
+											onChange={event => handleChange(field.name, event.target.value)}
+											onBlur={() => commitTagValue(field.name)}
+											onKeyDown={event => {
+												if (event.key !== "Enter") return;
+												event.preventDefault();
+												commitTagValue(field.name);
+											}}
+											helperText="Use virgula para separar palavras-chave ou pressione Enter para confirmar."
 										/>
 										<div style={{ marginTop: 8 }}>
 											{parseTagText(form[field.name]).map(tag => (

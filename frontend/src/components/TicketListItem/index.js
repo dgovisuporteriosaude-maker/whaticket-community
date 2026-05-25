@@ -121,20 +121,6 @@ const useStyles = makeStyles(theme => ({
 		left: "0%",
 	},
 
-	userTag: {
-		position: "absolute",
-		marginRight: 5,
-		right: 5,
-		bottom: 5,
-		background: "#DBEAFE",
-		color: "#1D4ED8",
-		border: "1px solid #BFDBFE",
-		fontWeight: 800,
-		maxWidth: 120,
-		overflow: "hidden",
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap",
-	},
 	statusChip: {
 		height: 22,
 		fontSize: 11,
@@ -268,9 +254,6 @@ const TicketListItem = ({ ticket }) => {
 										<>{format(parseISO(ticket.updatedAt), "dd/MM/yyyy")}</>
 									)}
 								</Typography>
-							)}
-							{ticket.whatsappId && (
-								<div className={classes.userTag} title={i18n.t("ticketsList.connectionTitle")}>{ticket.whatsapp?.name}</div>
 							)}
 						</span>
 					}

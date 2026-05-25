@@ -44,6 +44,7 @@ function nullableNumber(value: any): number | null {
 }
 
 function defaultAiModel(provider: string): string {
+  const normalizedProvider = String(provider || "openai").toLowerCase();
   const defaults: Record<string, string> = {
     openai: "gpt-4o-mini",
     gemini: "gemini-2.5-flash",
@@ -51,7 +52,33 @@ function defaultAiModel(provider: string): string {
     deepseek: "deepseek-chat"
   };
 
-  return defaults[provider] || defaults.openai;
+  return defaults[normalizedProvider] || defaults.openai;
+}
+
+function normalizeAiProvider(provider: any): string {
+  const normalizedProvider = String(provider || "openai").toLowerCase().trim();
+  return ["openai", "gemini", "groq", "deepseek"].includes(normalizedProvider)
+    ? normalizedProvider
+    : "openai";
+}
+
+function normalizeAiModel(provider: string, model: any): string {
+  const normalizedModel = String(model || "").trim();
+  const fallback = defaultAiModel(provider);
+
+  if (!normalizedModel) return fallback;
+
+  const incompatibleByProvider: Record<string, RegExp[]> = {
+    openai: [/^llama/i, /^gemini/i, /^deepseek/i],
+    gemini: [/^gpt-/i, /^llama/i, /^deepseek/i],
+    groq: [/^gpt-/i, /^gemini/i, /^deepseek/i],
+    deepseek: [/^gpt-/i, /^gemini/i, /^llama/i, /versatile/i, /instant/i]
+  };
+
+  const incompatible = incompatibleByProvider[provider] || [];
+  return incompatible.some(pattern => pattern.test(normalizedModel))
+    ? fallback
+    : normalizedModel;
 }
 
 function requireField(value: any, message: string): void {
@@ -62,6 +89,24 @@ function requireField(value: any, message: string): void {
 
 function isEnabled(value: any): boolean {
   return value === true || value === "true" || value === "enabled";
+}
+
+function normalizeKeywordText(value: any): string | null {
+  if (value === null || value === undefined) return null;
+
+  const items = Array.isArray(value)
+    ? value
+    : String(value)
+      .split(",");
+
+  const normalized = items
+    .map(item => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item, index, list) =>
+      list.findIndex(other => other.toLowerCase() === item.toLowerCase()) === index
+    );
+
+  return normalized.length ? normalized.join(", ") : null;
 }
 
 function normalizeBody(resource: string, body: any): any {
@@ -188,10 +233,12 @@ function normalizeBody(resource: string, body: any): any {
 
   if (resource === "aiSettings") {
     const active = isEnabled(data.active);
+    const provider = normalizeAiProvider(data.provider);
+    const model = normalizeAiModel(provider, data.model);
     if (active) {
       requireField(data.name, "Informe o nome da IA.");
-      requireField(data.provider, "Escolha o provedor da IA.");
-      requireField(data.model, "Informe o modelo da IA.");
+      requireField(provider, "Escolha o provedor da IA.");
+      requireField(model, "Informe o modelo da IA.");
       requireField(data.apiKey, "Informe a chave da API da IA.");
     }
 
@@ -200,9 +247,10 @@ function normalizeBody(resource: string, body: any): any {
       companyName: data.companyName || null,
       serviceType: data.serviceType || null,
       behaviorPrompt: data.behaviorPrompt || null,
-      provider: data.provider || "openai",
-      model: data.model || defaultAiModel(data.provider || "openai"),
+      provider,
+      model,
       apiKey: data.apiKey || null,
+      baseUrl: data.baseUrl || null,
       systemPrompt: data.systemPrompt || null,
       temperature: data.temperature || 0.2,
       maxTokens: Number(data.maxTokens || 800),
@@ -221,7 +269,7 @@ function normalizeBody(resource: string, body: any): any {
     return {
       title: data.title,
       content: data.content || "",
-      tags: data.tags || null,
+      tags: normalizeKeywordText(data.tags),
       active: data.active !== false
     };
   }
@@ -360,30 +408,37 @@ export const testAiSetting = async (req: Request, res: Response): Promise<Respon
   try {
     const response = await GenerateAiResponseService({
       aiSettingId: aiSetting.id,
-      message: "Teste de conexao. Responda apenas: ok"
+      message: "Responda apenas: teste ok"
     });
 
     if (!response) {
       return res.status(200).json({
         ok: false,
-        message: "A API respondeu, mas nao retornou texto."
+        success: false,
+        provider: aiSetting.provider,
+        model: aiSetting.model,
+        errorMessage: "A API respondeu, mas nao retornou texto."
       });
     }
 
     return res.status(200).json({
       ok: true,
+      success: true,
       message: "API da IA funcionando.",
       provider: aiSetting.provider,
       model: aiSetting.model,
-      response
+      responseText: response
     });
   } catch (error) {
     if (error instanceof AiProviderError) {
       return res.status(200).json({
         ok: false,
+        success: false,
+        errorMessage: error.message,
         message: error.message,
         provider: error.provider,
-        status: error.status,
+        model: aiSetting.model,
+        statusCode: error.status,
         code: error.code
       });
     }

@@ -15,6 +15,7 @@ import Message from "../models/Message";
 import Queue from "../models/Queue";
 import AiSetting from "../models/AiSetting";
 import Setting from "../models/Setting";
+import ClosingReason from "../models/ClosingReason";
 
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
 import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
@@ -366,6 +367,74 @@ const stripAiCloseTag = (message: string): { body: string; shouldClose: boolean 
   };
 };
 
+const isMoreHelpQuestion = (body: string): boolean =>
+  /ajudo em algo mais|ajuda em algo mais|posso ajudar em algo mais|posso ajudar em mais alguma coisa|mais alguma coisa|algo mais|consegui te ajudar|consegui ajudar|te ajudei|essa informacao te ajudou|essa informação te ajudou/i.test(
+    normalizeSimpleText(body)
+  );
+
+const getAiClosingReasonId = async (ticket: Ticket): Promise<number | null> => {
+  if (ticket.aiAutoCloseReasonId) return ticket.aiAutoCloseReasonId;
+
+  const reason = await ClosingReason.findOne({
+    where: { active: true },
+    order: [["id", "ASC"]]
+  });
+
+  return reason?.id || null;
+};
+
+const buildAiConversationSummary = (
+  previousSummary: string | null | undefined,
+  userMessage: string,
+  aiMessage: string,
+  action: string
+): string => {
+  const compact = [
+    previousSummary,
+    `Cliente: ${userMessage}`,
+    `IA (${action}): ${aiMessage}`
+  ].filter(Boolean).join(" | ");
+
+  return compact.length > 1200 ? compact.slice(compact.length - 1200) : compact;
+};
+
+const buildAiStateUpdate = (
+  ticket: Ticket,
+  userMessage: string,
+  aiMessage: string,
+  action: string,
+  intent?: string,
+  reason?: string,
+  knowledgeIds?: number[],
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> => {
+  const askedMoreHelp = isMoreHelpQuestion(aiMessage);
+
+  return {
+    aiHandled: true,
+    lastAiMessage: aiMessage,
+    lastAiIntent: intent || null,
+    lastAiAction: action,
+    lastAiDecisionReason: reason || null,
+    lastAiKnowledgeIds: knowledgeIds?.length ? JSON.stringify(knowledgeIds) : null,
+    lastAiAskedMoreHelp: askedMoreHelp,
+    lastAiQuestionType: askedMoreHelp ? "more_help" : null,
+    lastAiExpectedReply: askedMoreHelp ? "yes_no" : null,
+    lastAiQuestionOptions: null,
+    lastAiQuestionAt: askedMoreHelp ? new Date() : null,
+    lastAiQuestionAttempts: 0,
+    lastAiInteractionAt: new Date(),
+    aiInteractionCount: Number(ticket.aiInteractionCount || 0) + 1,
+    aiConversationSummary: buildAiConversationSummary(
+      ticket.aiConversationSummary,
+      userMessage,
+      aiMessage,
+      action
+    ),
+    ...overrides
+  };
+};
+
 const handleAiReply = async (
   whatsappId: number,
   messageBody: string,
@@ -380,10 +449,13 @@ const handleAiReply = async (
       `Ola${contactPayload.name ? `, ${contactPayload.name}` : ""}! Como posso ajudar?`,
       ticket
     );
-    await ticket.update({
-      aiHandled: true,
-      lastAiInteractionAt: new Date()
-    });
+    await ticket.update(buildAiStateUpdate(
+      ticket,
+      messageBody,
+      `Ola${contactPayload.name ? `, ${contactPayload.name}` : ""}! Como posso ajudar?`,
+      "saudacao",
+      "saudacao"
+    ));
     return true;
   }
 
@@ -442,6 +514,18 @@ const handleAiReply = async (
     }
 
     if (aiDecision.acao === "encaminhar_atendente" || aiDecision.acao === "sem_resposta_segura") {
+      logger.info(
+        {
+          ticketId: ticket.id,
+          action: aiDecision.acao,
+          intent: aiDecision.intencao,
+          reason: aiDecision.motivo,
+          baseFound: aiDecision.baseEncontrada,
+          safeAnswer: aiDecision.respostaSegura
+        },
+        "[AI ACTION] Handoff requested"
+      );
+
       const handedOff = await handoffToHuman(
         whatsappId,
         messageBody,
@@ -469,7 +553,9 @@ const handleAiReply = async (
     }
 
     if (aiDecision.acao === "encerrar_atendimento") {
-      if (!ticket.aiAutoCloseReasonId) {
+      const closingReasonId = await getAiClosingReasonId(ticket);
+
+      if (!closingReasonId) {
         const handedOff = await handoffToHuman(
           whatsappId,
           messageBody,
@@ -492,14 +578,27 @@ const handleAiReply = async (
         ticketData: {
           status: "closed",
           categoryId: ticket.categoryId,
-          closingReasonId: ticket.aiAutoCloseReasonId,
+          closingReasonId,
           closingNote: "Atendimento encerrado pela IA conforme contexto da conversa.",
           aiActive: false,
           aiHandled: true,
           aiAutoClosed: true,
           aiAutoClosedAt: new Date(),
           aiFinishedAt: new Date(),
-          aiSettingId: ticket.aiSettingId
+          aiSettingId: ticket.aiSettingId,
+          lastAiMessage: closingMessage,
+          lastAiIntent: aiDecision.intencao,
+          lastAiAction: aiDecision.acao,
+          lastAiDecisionReason: aiDecision.motivo,
+          lastAiKnowledgeIds: aiDecision.knowledgeIds?.length ? JSON.stringify(aiDecision.knowledgeIds) : null,
+          lastAiAskedMoreHelp: false,
+          aiInteractionCount: Number(ticket.aiInteractionCount || 0) + 1,
+          aiConversationSummary: buildAiConversationSummary(
+            ticket.aiConversationSummary,
+            messageBody,
+            closingMessage,
+            aiDecision.acao
+          )
         }
       });
 
@@ -520,11 +619,25 @@ const handleAiReply = async (
       await sendTextMessage(whatsappId, contactPayload, body, ticket);
       await ticket.update({
         aiHandled: true,
+        lastAiMessage: body,
+        lastAiIntent: aiDecision.intencao,
+        lastAiAction: aiDecision.acao,
+        lastAiDecisionReason: aiDecision.motivo,
+        lastAiKnowledgeIds: aiDecision.knowledgeIds?.length ? JSON.stringify(aiDecision.knowledgeIds) : null,
+        lastAiAskedMoreHelp: false,
+        lastAiExpectedReply: "option",
         lastAiQuestionType: "confirmacao_opcao",
         lastAiQuestionOptions: JSON.stringify(options),
         lastAiQuestionAt: new Date(),
         lastAiQuestionAttempts: 0,
-        lastAiInteractionAt: new Date()
+        lastAiInteractionAt: new Date(),
+        aiInteractionCount: Number(ticket.aiInteractionCount || 0) + 1,
+        aiConversationSummary: buildAiConversationSummary(
+          ticket.aiConversationSummary,
+          messageBody,
+          body,
+          aiDecision.acao
+        )
       });
       return true;
     }
@@ -535,10 +648,20 @@ const handleAiReply = async (
         "Para eu te passar a informacao correta, pode me dar mais detalhes sobre o que voce precisa?";
 
       await sendTextMessage(whatsappId, contactPayload, body, ticket);
-      await ticket.update({
-        aiHandled: true,
-        lastAiInteractionAt: new Date()
-      });
+      await ticket.update(buildAiStateUpdate(
+        ticket,
+        messageBody,
+        body,
+        aiDecision.acao,
+        aiDecision.intencao,
+        aiDecision.motivo,
+        aiDecision.knowledgeIds,
+        {
+          lastAiQuestionType: "missing_info",
+          lastAiExpectedReply: "free_text",
+          lastAiQuestionAt: new Date()
+        }
+      ));
       return true;
     }
 
@@ -547,7 +670,9 @@ const handleAiReply = async (
       await sendTextMessage(whatsappId, contactPayload, body, ticket);
 
       if (shouldClose) {
-        if (!ticket.aiAutoCloseReasonId) {
+        const closingReasonId = await getAiClosingReasonId(ticket);
+
+        if (!closingReasonId) {
           await handoffToHuman(whatsappId, messageBody, ticket, contactPayload, aiSettingId);
           return true;
         }
@@ -557,27 +682,41 @@ const handleAiReply = async (
           ticketData: {
             status: "closed",
             categoryId: ticket.categoryId,
-            closingReasonId: ticket.aiAutoCloseReasonId,
+            closingReasonId,
             closingNote: "Atendimento encerrado pela IA conforme tag de contexto.",
             aiActive: false,
             aiHandled: true,
             aiAutoClosed: true,
             aiAutoClosedAt: new Date(),
             aiFinishedAt: new Date(),
-            aiSettingId: ticket.aiSettingId
+            aiSettingId: ticket.aiSettingId,
+            lastAiMessage: body,
+            lastAiIntent: aiDecision.intencao,
+            lastAiAction: aiDecision.acao,
+            lastAiDecisionReason: aiDecision.motivo,
+            lastAiKnowledgeIds: aiDecision.knowledgeIds?.length ? JSON.stringify(aiDecision.knowledgeIds) : null,
+            lastAiAskedMoreHelp: false,
+            aiInteractionCount: Number(ticket.aiInteractionCount || 0) + 1,
+            aiConversationSummary: buildAiConversationSummary(
+              ticket.aiConversationSummary,
+              messageBody,
+              body,
+              aiDecision.acao
+            )
           }
         });
         return true;
       }
 
-      await ticket.update({
-        aiHandled: true,
-        lastAiQuestionType: null,
-        lastAiQuestionOptions: null,
-        lastAiQuestionAt: null,
-        lastAiQuestionAttempts: 0,
-        lastAiInteractionAt: new Date()
-      });
+      await ticket.update(buildAiStateUpdate(
+        ticket,
+        messageBody,
+        body,
+        aiDecision.acao,
+        aiDecision.intencao,
+        aiDecision.motivo,
+        aiDecision.knowledgeIds
+      ));
       return true;
     }
 
@@ -709,6 +848,15 @@ const handleUraLogic = async (
           lastAiQuestionAt: null,
           lastAiQuestionAttempts: 0,
           lastAiInteractionAt: null,
+          lastAiMessage: null,
+          lastAiExpectedReply: null,
+          lastAiIntent: null,
+          lastAiAction: null,
+          lastAiKnowledgeIds: null,
+          lastAiDecisionReason: null,
+          lastAiAskedMoreHelp: false,
+          aiInteractionCount: 0,
+          aiConversationSummary: null,
           aiAutoCloseEnabled: selectedOption.aiAutoCloseEnabled === true,
           aiAutoCloseMinutes: selectedOption.aiAutoCloseEnabled
             ? selectedOption.aiAutoCloseMinutes || null
@@ -720,12 +868,8 @@ const handleUraLogic = async (
             ? selectedOption.aiAutoCloseReasonId || null
             : null,
           aiAutoCloseOnlyIfNotHandedOff: selectedOption.aiAutoCloseOnlyIfNotHandedOff !== false,
-          aiHumanHandoffQueueId: selectedOption.aiHumanHandoffEnabled
-            ? selectedOption.aiHumanHandoffQueueId || null
-            : null,
-          aiHumanHandoffMessage: selectedOption.aiHumanHandoffEnabled
-            ? selectedOption.aiHumanHandoffMessage || null
-            : null,
+          aiHumanHandoffQueueId: selectedOption.aiHumanHandoffQueueId || null,
+          aiHumanHandoffMessage: selectedOption.aiHumanHandoffMessage || null,
           aiHandoffAlertEnabled: selectedOption.aiHandoffAlertEnabled ? true : false,
           aiHandoffAlertTo: selectedOption.aiHandoffAlertTo || null,
           aiHandoffAlertMessage: selectedOption.aiHandoffAlertMessage || null,
@@ -751,6 +895,15 @@ const handleUraLogic = async (
       lastAiQuestionAt: null,
       lastAiQuestionAttempts: 0,
       lastAiInteractionAt: null,
+      lastAiMessage: null,
+      lastAiExpectedReply: null,
+      lastAiIntent: null,
+      lastAiAction: null,
+      lastAiKnowledgeIds: null,
+      lastAiDecisionReason: null,
+      lastAiAskedMoreHelp: false,
+      aiInteractionCount: 0,
+      aiConversationSummary: null,
       aiAutoCloseEnabled: false,
       aiAutoCloseMinutes: null,
       aiAutoCloseMessage: null,
@@ -809,6 +962,15 @@ const handleQueueLogic = async (
         lastAiQuestionAt: queue.useAI ? null : undefined,
         lastAiQuestionAttempts: queue.useAI ? 0 : undefined,
         lastAiInteractionAt: queue.useAI ? null : undefined,
+        lastAiMessage: queue.useAI ? null : undefined,
+        lastAiExpectedReply: queue.useAI ? null : undefined,
+        lastAiIntent: queue.useAI ? null : undefined,
+        lastAiAction: queue.useAI ? null : undefined,
+        lastAiKnowledgeIds: queue.useAI ? null : undefined,
+        lastAiDecisionReason: queue.useAI ? null : undefined,
+        lastAiAskedMoreHelp: queue.useAI ? false : undefined,
+        aiInteractionCount: queue.useAI ? 0 : undefined,
+        aiConversationSummary: queue.useAI ? null : undefined,
         aiSettingId: queue.useAI ? queue.aiSettingId : null
       },
       ticketId: ticket.id
@@ -837,6 +999,15 @@ const handleQueueLogic = async (
         lastAiQuestionAt: choosenQueue.useAI ? null : undefined,
         lastAiQuestionAttempts: choosenQueue.useAI ? 0 : undefined,
         lastAiInteractionAt: choosenQueue.useAI ? null : undefined,
+        lastAiMessage: choosenQueue.useAI ? null : undefined,
+        lastAiExpectedReply: choosenQueue.useAI ? null : undefined,
+        lastAiIntent: choosenQueue.useAI ? null : undefined,
+        lastAiAction: choosenQueue.useAI ? null : undefined,
+        lastAiKnowledgeIds: choosenQueue.useAI ? null : undefined,
+        lastAiDecisionReason: choosenQueue.useAI ? null : undefined,
+        lastAiAskedMoreHelp: choosenQueue.useAI ? false : undefined,
+        aiInteractionCount: choosenQueue.useAI ? 0 : undefined,
+        aiConversationSummary: choosenQueue.useAI ? null : undefined,
         aiSettingId: choosenQueue.useAI ? choosenQueue.aiSettingId : null
       },
       ticketId: ticket.id

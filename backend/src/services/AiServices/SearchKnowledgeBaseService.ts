@@ -1,5 +1,6 @@
 import { QueryTypes } from "sequelize";
 import sequelize from "../../database";
+import { logger } from "../../utils/logger";
 
 export interface KnowledgeFragment {
   id: number;
@@ -7,10 +8,12 @@ export interface KnowledgeFragment {
   tags: string | null;
   fragment: string;
   rank: number;
+  source: "fts" | "fallback";
 }
 
 const normalizeQuery = (message: string): string =>
   (message || "")
+    .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
@@ -75,6 +78,8 @@ const SYNONYMS: Record<string, string[]> = {
   orcamento: ["valor", "preco", "custo", "proposta"],
   orsameto: ["orcamento", "valor", "preco", "custo"],
   orcamentos: ["orcamento", "valor", "preco"],
+  qto: ["quanto", "valor", "preco", "orcamento", "custo"],
+  quanto: ["valor", "preco", "orcamento", "custo"],
   diaria: ["diarias", "dia", "valor", "preco"],
   diarias: ["diaria", "dia", "valor", "preco"],
   senha: ["password", "login", "acesso"],
@@ -104,14 +109,8 @@ const buildTsQuery = (terms: string[]): string =>
     .map(term => `${term}:*`)
     .join(" | ");
 
-const SearchKnowledgeBaseService = async (
-  message: string
-): Promise<KnowledgeFragment[]> => {
-  const terms = getSearchTerms(message);
-  const query = buildTsQuery(terms);
-  if (!query) return [];
-
-  const rows = await sequelize.query<KnowledgeFragment>(
+const runFullTextSearch = async (query: string): Promise<KnowledgeFragment[]> =>
+  sequelize.query<KnowledgeFragment>(
     `
       with search as (
         select to_tsquery('portuguese', :query) as q
@@ -136,7 +135,8 @@ const SearchKnowledgeBaseService = async (
         k.title,
         k.tags,
         left(k.content, 900) as fragment,
-        ts_rank_cd(k.document, search.q) as rank
+        ts_rank_cd(k.document, search.q) as rank,
+        'fts' as source
       from weighted_articles k, search
       where k.document @@ search.q
       order by rank desc, k."updatedAt" desc
@@ -146,6 +146,80 @@ const SearchKnowledgeBaseService = async (
       replacements: { query },
       type: QueryTypes.SELECT
     }
+  );
+
+const runFallbackSearch = async (terms: string[]): Promise<KnowledgeFragment[]> => {
+  const safeTerms = terms.slice(0, 8);
+  if (!safeTerms.length) return [];
+
+  const conditions = safeTerms
+    .map((_, index) => `
+      k.title ilike :term${index}
+      or k.tags ilike :term${index}
+      or k.content ilike :term${index}
+    `)
+    .join(" or ");
+
+  const scoreParts = safeTerms
+    .map((_, index) => `
+      case when k.title ilike :term${index} then 4 else 0 end +
+      case when k.tags ilike :term${index} then 3 else 0 end +
+      case when k.content ilike :term${index} then 1 else 0 end
+    `)
+    .join(" + ");
+
+  const replacements = safeTerms.reduce<Record<string, string>>((acc, term, index) => {
+    acc[`term${index}`] = `%${term}%`;
+    return acc;
+  }, {});
+
+  return sequelize.query<KnowledgeFragment>(
+    `
+      select
+        k.id,
+        k.title,
+        k.tags,
+        left(k.content, 900) as fragment,
+        (${scoreParts})::float as rank,
+        'fallback' as source
+      from "KnowledgeBaseArticles" k
+      where k.active = true
+        and (${conditions})
+      order by rank desc, k."updatedAt" desc
+      limit 2
+    `,
+    {
+      replacements,
+      type: QueryTypes.SELECT
+    }
+  );
+};
+
+const SearchKnowledgeBaseService = async (
+  message: string
+): Promise<KnowledgeFragment[]> => {
+  const terms = getSearchTerms(message);
+  const query = buildTsQuery(terms);
+  if (!query) return [];
+
+  let rows = await runFullTextSearch(query);
+  if (!rows.length) {
+    rows = await runFallbackSearch(terms);
+  }
+
+  logger.info(
+    {
+      terms,
+      query,
+      found: rows.length,
+      results: rows.map(row => ({
+        id: row.id,
+        title: row.title,
+        rank: row.rank,
+        source: row.source
+      }))
+    },
+    "[AI RAG] Knowledge search completed"
   );
 
   return rows;

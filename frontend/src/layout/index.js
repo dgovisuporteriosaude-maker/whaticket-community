@@ -26,7 +26,7 @@ import { i18n } from "../translate/i18n";
 import { useThemeContext } from "../context/DarkMode";
 import { useBranding } from "../context/Branding";
 
-const drawerWidth = 272;
+const drawerWidth = 268;
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -39,14 +39,25 @@ const useStyles = makeStyles((theme) => ({
   },
   toolbar: {
     paddingRight: 24,
-    minHeight: 64,
+    minHeight: 72,
     gap: theme.spacing(1),
+    color: "#FFFFFF",
+    "& .MuiSvgIcon-root": {
+      color: "#FFFFFF !important",
+      fill: "#FFFFFF !important",
+    },
+    "& .MuiIconButton-root": {
+      color: "#FFFFFF",
+    },
+    "& .MuiTypography-root": {
+      color: "#FFFFFF",
+    },
   },
   toolbarIcon: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: theme.spacing(1.5, 1.5),
+    padding: theme.spacing(1.5, 1.75),
     minHeight: 64,
     background: "#08111F",
   },
@@ -60,19 +71,23 @@ const useStyles = makeStyles((theme) => ({
     display: "flex",
     alignItems: "center",
     minWidth: 0,
-    gap: theme.spacing(1),
+    gap: theme.spacing(1.5),
   },
   brandLogo: {
-    width: 36,
-    height: 36,
+    width: 136,
+    height: 48,
     borderRadius: 8,
     objectFit: "contain",
-    background: "rgba(255,255,255,0.08)",
-    padding: 4,
+    background: "rgba(255,255,255,0.10)",
+    padding: 6,
+    [theme.breakpoints.down("xs")]: {
+      width: 104,
+      height: 40,
+    },
   },
   brandFallback: {
-    width: 36,
-    height: 36,
+    width: 64,
+    height: 44,
     borderRadius: 8,
     display: "flex",
     alignItems: "center",
@@ -84,10 +99,13 @@ const useStyles = makeStyles((theme) => ({
   brandName: {
     color: "#FFFFFF",
     fontWeight: 800,
-    fontSize: 16,
+    fontSize: 18,
     lineHeight: 1.1,
     overflow: "hidden",
     textOverflow: "ellipsis",
+    [theme.breakpoints.down("xs")]: {
+      fontSize: 15,
+    },
   },
   collapseButton: {
     color: "#94A3B8",
@@ -133,8 +151,21 @@ const useStyles = makeStyles((theme) => ({
       duration: theme.transitions.duration.enteringScreen,
     }),
     backgroundColor: "#08111F",
-    borderRight: "1px solid rgba(148, 163, 184, 0.14)",
-    color: "#E2E8F0",
+    borderRight: "1px solid rgba(148, 163, 184, 0.16)",
+    color: "#FFFFFF",
+    "& .MuiListItemIcon-root": {
+      color: "#FFFFFF !important",
+    },
+    "& .MuiSvgIcon-root": {
+      color: "#FFFFFF !important",
+      fill: "#FFFFFF !important",
+    },
+    "& .MuiListItemText-primary": {
+      color: "#FFFFFF",
+    },
+    "& .MuiTypography-root": {
+      color: "#FFFFFF",
+    },
   },
   drawerPaperClose: {
     overflowX: "hidden",
@@ -148,7 +179,7 @@ const useStyles = makeStyles((theme) => ({
     },
   },
   appBarSpacer: {
-    minHeight: 64,
+    minHeight: 72,
   },
   content: {
     flex: 1,

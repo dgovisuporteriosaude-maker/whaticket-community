@@ -27,54 +27,71 @@ import { Can } from "../components/Can";
 
 const useStyles = makeStyles(theme => ({
   root: {
-    padding: theme.spacing(1, 1.25, 2),
+    padding: theme.spacing(1.25, 1.5, 2),
+    background: "#08111F",
+    color: "#FFFFFF",
   },
   groupLabel: {
-    margin: theme.spacing(2, 1.5, 0.75),
+    margin: theme.spacing(2.5, 0.25, 1),
     fontSize: 11,
     fontWeight: 800,
-    letterSpacing: 0.4,
-    color: "#94A3B8",
+    letterSpacing: 0,
+    color: "#93C5FD",
+    opacity: 1,
+    textTransform: "uppercase",
   },
   item: {
-    minHeight: 42,
-    margin: theme.spacing(0.25, 0),
+    minHeight: 44,
+    margin: theme.spacing(0.5, 0),
     padding: theme.spacing(0.75, 1.25),
     borderRadius: 8,
     color: "#FFFFFF",
     borderLeft: "3px solid transparent",
+    overflow: "hidden",
     "&:hover": {
       background: "rgba(37, 99, 235, 0.12)",
       color: "#FFFFFF",
     },
     "& .MuiListItemIcon-root": {
-      minWidth: 38,
+      minWidth: 44,
       color: "#FFFFFF",
+      opacity: 1,
     },
-    "& .MuiSvgIcon-root": {
-      color: "#FFFFFF",
+    "& .MuiListItemIcon-root svg, & .MuiListItemIcon-root .MuiSvgIcon-root, & svg.MuiSvgIcon-root": {
+      color: "#FFFFFF !important",
+      fill: "#FFFFFF !important",
+      fontSize: 23,
     },
-    "& .MuiBadge-root .MuiSvgIcon-root": {
-      color: "#FFFFFF",
+    "& .MuiBadge-root svg, & .MuiBadge-root .MuiSvgIcon-root": {
+      color: "#FFFFFF !important",
+      fill: "#FFFFFF !important",
     },
     "& .MuiListItemText-primary": {
-      fontSize: 14,
-      fontWeight: 700,
+      fontSize: 16,
+      fontWeight: 800,
       color: "#FFFFFF",
+      opacity: 1,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
     },
   },
   activeItem: {
-    background: "rgba(37, 99, 235, 0.20)",
+    background: "#12306A",
     color: "#FFFFFF",
     borderLeftColor: "#38BDF8",
+    boxShadow: "inset 0 0 0 1px rgba(96, 165, 250, 0.08)",
+    "& .MuiListItemIcon-root, & .MuiSvgIcon-root, & .MuiListItemText-primary": {
+      color: "#FFFFFF",
+    },
   },
   submenu: {
-    marginLeft: theme.spacing(1),
-    paddingLeft: theme.spacing(1),
+    marginLeft: theme.spacing(0.75),
+    paddingLeft: theme.spacing(0.75),
     borderLeft: "1px solid rgba(148, 163, 184, 0.14)",
   },
   sectionButton: {
-    marginTop: theme.spacing(1),
+    marginTop: theme.spacing(0.5),
   },
 }));
 
@@ -94,12 +111,25 @@ function ListItemLink(props) {
   return (
     <li>
       <ListItem button component={renderLink} className={`${className || ""} ${active ? activeClassName || "" : ""}`}>
-        {icon ? <ListItemIcon>{icon}</ListItemIcon> : null}
+        {icon ? (
+          <ListItemIcon style={{ color: "#FFFFFF" }}>
+            {React.cloneElement(icon, {
+              style: { ...(icon.props?.style || {}), color: "#FFFFFF", fill: "#FFFFFF" },
+              htmlColor: "#FFFFFF"
+            })}
+          </ListItemIcon>
+        ) : null}
         <ListItemText primary={primary} />
       </ListItem>
     </li>
   );
 }
+
+const whiteIcon = icon =>
+  React.cloneElement(icon, {
+    style: { ...(icon.props?.style || {}), color: "#FFFFFF", fill: "#FFFFFF" },
+    htmlColor: "#FFFFFF"
+  });
 
 const MainListItems = (props) => {
   const { drawerClose } = props;
@@ -152,7 +182,7 @@ const MainListItems = (props) => {
       <Typography className={classes.groupLabel}>GESTAO</Typography>
       <ListItemLink
         to="/"
-        primary="Dashboard"
+        primary="Painel"
         icon={<DashboardOutlinedIcon />}
         className={classes.item}
         activeClassName={classes.activeItem}
@@ -161,7 +191,7 @@ const MainListItems = (props) => {
       <Typography className={classes.groupLabel}>AUTOMACAO</Typography>
       <ListItemLink
         to="/quickAnswers"
-        primary={i18n.t("mainDrawer.listItems.quickAnswers")}
+        primary="Respostas rápidas"
         icon={<QuestionAnswerOutlinedIcon />}
         className={classes.item}
         activeClassName={classes.activeItem}
@@ -188,10 +218,10 @@ const MainListItems = (props) => {
               }}
             >
               <ListItemIcon>
-                <SecurityOutlinedIcon />
+                {whiteIcon(<SecurityOutlinedIcon />)}
               </ListItemIcon>
               <ListItemText primary={i18n.t("mainDrawer.listItems.administration")} />
-              {adminOpen ? <ExpandLess /> : <ExpandMore />}
+              {adminOpen ? whiteIcon(<ExpandLess />) : whiteIcon(<ExpandMore />)}
             </ListItem>
             <Collapse in={adminOpen} timeout="auto" unmountOnExit className={classes.submenu}>
               <ListItemLink

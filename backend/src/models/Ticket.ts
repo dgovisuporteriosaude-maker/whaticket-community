@@ -186,6 +186,35 @@ class Ticket extends Model<Ticket> {
   @Column
   lastAiInteractionAt: Date;
 
+  @Column(DataType.TEXT)
+  lastAiMessage: string;
+
+  @Column
+  lastAiExpectedReply: string;
+
+  @Column
+  lastAiIntent: string;
+
+  @Column
+  lastAiAction: string;
+
+  @Column(DataType.TEXT)
+  lastAiKnowledgeIds: string;
+
+  @Column(DataType.TEXT)
+  lastAiDecisionReason: string;
+
+  @Default(false)
+  @Column
+  lastAiAskedMoreHelp: boolean;
+
+  @Default(0)
+  @Column
+  aiInteractionCount: number;
+
+  @Column(DataType.TEXT)
+  aiConversationSummary: string;
+
   @Column
   satisfactionSurveyId: number;
 

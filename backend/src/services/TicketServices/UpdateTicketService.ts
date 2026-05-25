@@ -39,6 +39,15 @@ interface TicketData {
   lastAiQuestionAt?: Date | null;
   lastAiQuestionAttempts?: number;
   lastAiInteractionAt?: Date | null;
+  lastAiMessage?: string | null;
+  lastAiExpectedReply?: string | null;
+  lastAiIntent?: string | null;
+  lastAiAction?: string | null;
+  lastAiKnowledgeIds?: string | null;
+  lastAiDecisionReason?: string | null;
+  lastAiAskedMoreHelp?: boolean;
+  aiInteractionCount?: number;
+  aiConversationSummary?: string | null;
   uraFlowId?: number | null;
   uraMenuSentAt?: Date | null;
 }
@@ -92,6 +101,15 @@ const UpdateTicketService = async ({
     lastAiQuestionAt,
     lastAiQuestionAttempts,
     lastAiInteractionAt,
+    lastAiMessage,
+    lastAiExpectedReply,
+    lastAiIntent,
+    lastAiAction,
+    lastAiKnowledgeIds,
+    lastAiDecisionReason,
+    lastAiAskedMoreHelp,
+    aiInteractionCount,
+    aiConversationSummary,
     uraFlowId,
     uraMenuSentAt
   } = ticketData;
@@ -156,6 +174,15 @@ const UpdateTicketService = async ({
     lastAiQuestionAt: shouldDisableBot ? null : lastAiQuestionAt,
     lastAiQuestionAttempts: shouldDisableBot ? 0 : lastAiQuestionAttempts,
     lastAiInteractionAt,
+    lastAiMessage,
+    lastAiExpectedReply: shouldDisableBot ? null : lastAiExpectedReply,
+    lastAiIntent,
+    lastAiAction,
+    lastAiKnowledgeIds,
+    lastAiDecisionReason,
+    lastAiAskedMoreHelp: shouldDisableBot ? false : lastAiAskedMoreHelp,
+    aiInteractionCount,
+    aiConversationSummary,
     uraFlowId,
     uraMenuSentAt
   });

@@ -4,6 +4,7 @@ import Message from "../../models/Message";
 import AiInteractionLog from "../../models/AiInteractionLog";
 import { logger } from "../../utils/logger";
 import SearchKnowledgeBaseService from "./SearchKnowledgeBaseService";
+import AiProviderFactory from "./providers/AiProviderFactory";
 
 export class AiProviderError extends Error {
   public provider: string;
@@ -40,28 +41,63 @@ interface Request {
   ticketId?: number | null;
   systemPromptOverride?: string;
   skipKnowledgeSearch?: boolean;
+  jsonMode?: boolean;
 }
 
 const DEFAULT_MODELS: Record<string, string> = {
   openai: "gpt-4o-mini",
-  deepseek: "deepseek-v3",
-  gemini: "gemini-1.5-flash",
+  deepseek: "deepseek-chat",
+  gemini: "gemini-2.5-flash",
   groq: "llama-3.3-70b-versatile"
 };
 
 const getConfiguredModel = (provider: string, model?: string): string => {
   if (!model) return DEFAULT_MODELS[provider] || DEFAULT_MODELS.openai;
 
-  if (provider === "gemini" && model.startsWith("gpt-")) {
+  if (
+    provider === "gemini" &&
+    (
+      model.startsWith("gpt-") ||
+      model.startsWith("llama") ||
+      model.startsWith("deepseek")
+    )
+  ) {
     return DEFAULT_MODELS.gemini;
   }
 
-  if (provider === "openai" && model.startsWith("gemini-")) {
+  if (
+    provider === "openai" &&
+    (
+      model.startsWith("gemini-") ||
+      model.startsWith("llama") ||
+      model.startsWith("deepseek")
+    )
+  ) {
     return DEFAULT_MODELS.openai;
   }
 
-  if (provider === "groq" && (model.startsWith("gpt-") || model.startsWith("gemini-"))) {
+  if (
+    provider === "groq" &&
+    (
+      model.startsWith("gpt-") ||
+      model.startsWith("gemini-") ||
+      model.startsWith("deepseek")
+    )
+  ) {
     return DEFAULT_MODELS.groq;
+  }
+
+  if (
+    provider === "deepseek" &&
+    (
+      model.startsWith("llama") ||
+      model.startsWith("gpt-") ||
+      model.startsWith("gemini-") ||
+      model.includes("versatile") ||
+      model.includes("instant")
+    )
+  ) {
+    return DEFAULT_MODELS.deepseek;
   }
 
   return model;
@@ -226,7 +262,8 @@ const GenerateAiResponseService = async ({
   contactName,
   ticketId,
   systemPromptOverride,
-  skipKnowledgeSearch
+  skipKnowledgeSearch,
+  jsonMode
 }: Request): Promise<string | null> => {
   const aiSetting = aiSettingId
     ? await AiSetting.findByPk(aiSettingId)
@@ -276,114 +313,41 @@ const GenerateAiResponseService = async ({
   }
 
   try {
-    if (provider === "gemini") {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-        model
-      )}:generateContent`;
-
-      const { data } = await runWithAiRetries(
-        () => axios.post(
-          endpoint,
-          {
-            systemInstruction: {
-              parts: [{ text: systemPrompt }]
-            },
-            contents: [
-              ...recentMessages.map(item => ({
-                role: item.role === "assistant" ? "model" : "user",
-                parts: [{ text: truncateByApproxTokens(item.content, 160) }]
-              })),
-              {
-                role: "user",
-                parts: [{ text: userMessage }]
-              }
-            ],
-            generationConfig: {
-              temperature,
-              maxOutputTokens: maxTokens,
-              thinkingConfig: {
-                thinkingBudget: 0
-              }
-            }
-          },
-          {
-            headers: {
-              "x-goog-api-key": aiSetting.apiKey,
-              "Content-Type": "application/json"
-            },
-            timeout: 30000
-          }
-        ),
-        { aiSettingId: aiSetting.id, provider, model }
-      );
-
-      const parts = data?.candidates?.[0]?.content?.parts || [];
-      const output = parts
-        .map((part: { text?: string }) => part.text || "")
-        .join("")
-        .trim() || null;
-      const completionTokens = Number(data?.usageMetadata?.candidatesTokenCount || estimateTokens(output || ""));
-      const promptTokens = Number(data?.usageMetadata?.promptTokenCount || promptTokensEstimate);
-      await createAiLog({
-        aiSettingId: aiSetting.id,
-        ticketId,
+    const providerClient = AiProviderFactory.create(provider);
+    const result = await runWithAiRetries(
+      () => providerClient.sendMessage({
         provider,
         model,
-        promptTokens,
-        completionTokens,
-        status: "success"
-      });
-      return output;
-    }
-
-    const endpoint =
-      provider === "deepseek"
-        ? "https://api.deepseek.com/chat/completions"
-        : provider === "groq"
-          ? "https://api.groq.com/openai/v1/chat/completions"
-          : "https://api.openai.com/v1/chat/completions";
-
-    const { data } = await runWithAiRetries(
-      () => axios.post(
-        endpoint,
-        {
-          model,
-          temperature,
-          max_tokens: maxTokens,
-          messages: [
-            { role: "system", content: safeSystemPrompt },
-            ...recentMessages.map(item => ({
-              role: item.role,
-              content: truncateByApproxTokens(item.content, 160)
-            })),
-            {
-              role: "user",
-              content: userMessage
-            }
-          ]
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${aiSetting.apiKey}`,
-            "Content-Type": "application/json"
-          },
-          timeout: 30000
-        }
-      ),
+        apiKey: aiSetting.apiKey,
+        baseUrl: (aiSetting as any).baseUrl || null,
+        systemPrompt: safeSystemPrompt,
+        messages: [
+          ...recentMessages.map(item => ({
+            role: item.role as "user" | "assistant",
+            content: truncateByApproxTokens(item.content, 160)
+          })),
+          {
+            role: "user" as const,
+            content: userMessage
+          }
+        ],
+        temperature,
+        maxTokens,
+        jsonMode
+      }),
       { aiSettingId: aiSetting.id, provider, model }
     );
 
-    const output = data?.choices?.[0]?.message?.content?.trim() || null;
     await createAiLog({
       aiSettingId: aiSetting.id,
       ticketId,
       provider,
       model,
-      promptTokens: Number(data?.usage?.prompt_tokens || promptTokensEstimate),
-      completionTokens: Number(data?.usage?.completion_tokens || estimateTokens(output || "")),
+      promptTokens: Number(result.inputTokens || promptTokensEstimate),
+      completionTokens: Number(result.outputTokens || estimateTokens(result.text || "")),
       status: "success"
     });
-    return output;
+    return result.text;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       const providerMessage =
