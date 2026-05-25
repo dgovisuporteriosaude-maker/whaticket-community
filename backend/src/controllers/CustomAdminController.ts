@@ -10,6 +10,11 @@ import KnowledgeBaseArticle from "../models/KnowledgeBaseArticle";
 import SatisfactionSurvey from "../models/SatisfactionSurvey";
 import CreateAuditLogService from "../services/AuditLogServices/CreateAuditLogService";
 import GenerateAiResponseService, { AiProviderError } from "../services/AiServices/GenerateAiResponseService";
+import {
+  htmlToPlainText,
+  plainTextToHtml,
+  sanitizeKnowledgeHtml
+} from "../utils/knowledgeFormatting";
 
 type AnyModel = any;
 
@@ -264,11 +269,15 @@ function normalizeBody(resource: string, body: any): any {
 
   if (resource === "knowledgeBaseArticles") {
     requireField(data.title, "Informe o titulo do artigo da base de conhecimento.");
-    requireField(data.content, "Informe o conteudo do artigo da base de conhecimento.");
+    const contentHtml = sanitizeKnowledgeHtml(data.contentHtml || plainTextToHtml(data.content || ""));
+    const contentText = htmlToPlainText(contentHtml);
+
+    requireField(contentText, "Informe o conteudo do artigo da base de conhecimento.");
 
     return {
       title: data.title,
-      content: data.content || "",
+      content: contentText,
+      contentHtml,
       tags: normalizeKeywordText(data.tags),
       active: data.active !== false
     };

@@ -3,7 +3,12 @@ import {
   Button,
   Chip,
   Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Grid,
+  IconButton,
   Paper,
   Table,
   TableBody,
@@ -17,6 +22,7 @@ import { makeStyles, useTheme } from "@material-ui/core/styles";
 import GetAppIcon from "@material-ui/icons/GetApp";
 import PictureAsPdfIcon from "@material-ui/icons/PictureAsPdf";
 import SearchIcon from "@material-ui/icons/Search";
+import VisibilityIcon from "@material-ui/icons/Visibility";
 import {
   Bar,
   BarChart,
@@ -97,14 +103,18 @@ const useStyles = makeStyles(theme => ({
     boxShadow: theme.custom?.cardShadow,
   },
   history: {
-    maxHeight: 460,
-    overflowY: "auto",
+    overflowX: "auto",
     borderTop: `1px solid ${theme.palette.divider}`,
     ...theme.scrollbarStyles,
   },
-  conversation: {
-    padding: theme.spacing(1.5),
-    borderBottom: `1px solid ${theme.palette.divider}`
+  conversationDialogMeta: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: theme.spacing(1),
+    marginBottom: theme.spacing(2),
+    [theme.breakpoints.down("xs")]: {
+      gridTemplateColumns: "1fr"
+    }
   },
   message: {
     marginTop: theme.spacing(0.75),
@@ -116,6 +126,9 @@ const useStyles = makeStyles(theme => ({
   "@media print": {
     noPrint: {
       display: "none !important"
+    },
+    printOnlyDialog: {
+      display: "block !important"
     },
     root: {
       overflow: "visible"
@@ -145,6 +158,14 @@ const emptyDashboard = {
   byDay: []
 };
 
+const escapeHtml = value =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
 const Dashboard = () => {
   const classes = useStyles();
   const theme = useTheme();
@@ -155,6 +176,8 @@ const Dashboard = () => {
   const [historySearch, setHistorySearch] = useState("");
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [loadingConversation, setLoadingConversation] = useState(false);
   const [satisfaction, setSatisfaction] = useState({ summary: { total: 0, average: 0 }, responses: [] });
 
   const params = useMemo(() => ({ startDate, endDate }), [startDate, endDate]);
@@ -215,6 +238,84 @@ const Dashboard = () => {
     } catch (err) {
       toastError(err);
     }
+  };
+
+  const openConversation = async ticketId => {
+    setLoadingConversation(true);
+    try {
+      const { data } = await api.get(`/reports/conversations/${ticketId}`);
+      setSelectedConversation(data);
+    } catch (err) {
+      toastError(err);
+    }
+    setLoadingConversation(false);
+  };
+
+  const printConversationPdf = () => {
+    if (!selectedConversation) return;
+
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+
+    const rows = (selectedConversation.messages || []).map(message => `
+      <tr>
+        <td>${escapeHtml(new Date(message.createdAt).toLocaleString())}</td>
+        <td>${escapeHtml(message.fromMe ? "Atendente/Sistema" : "Contato")}</td>
+        <td>${escapeHtml(message.body || `[${message.mediaType || "midia"}]`).replace(/\n/g, "<br />")}</td>
+      </tr>
+    `).join("");
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Conversa #${escapeHtml(selectedConversation.id)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; }
+            h1 { font-size: 20px; margin: 0 0 12px; }
+            .meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; margin-bottom: 20px; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #d8dee9; padding: 8px; text-align: left; vertical-align: top; }
+            th { background: #f1f5f9; }
+            td:nth-child(1) { width: 145px; }
+            td:nth-child(2) { width: 130px; }
+          </style>
+        </head>
+        <body>
+          <h1>Conversa concluida #${escapeHtml(selectedConversation.id)}</h1>
+          <div class="meta">
+            <div><strong>Contato:</strong> ${escapeHtml(selectedConversation.contact?.name || "Contato")}</div>
+            <div><strong>Telefone:</strong> ${escapeHtml(selectedConversation.contact?.number || "-")}</div>
+            <div><strong>Atendente:</strong> ${escapeHtml(selectedConversation.user?.name || "Sem atendente")}</div>
+            <div><strong>Fila:</strong> ${escapeHtml(selectedConversation.queue?.name || "Sem fila")}</div>
+            <div><strong>Categoria:</strong> ${escapeHtml(selectedConversation.category?.name || "Nao informada")}</div>
+            <div><strong>Motivo:</strong> ${escapeHtml(selectedConversation.closingReason?.name || "Nao informado")}</div>
+            <div><strong>Abertura:</strong> ${escapeHtml(new Date(selectedConversation.createdAt).toLocaleString())}</div>
+            <div><strong>Conclusao:</strong> ${escapeHtml(new Date(selectedConversation.updatedAt).toLocaleString())}</div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Data/hora</th>
+                <th>Origem</th>
+                <th>Mensagem</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <script>
+            window.onload = function () {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const metrics = [
@@ -365,7 +466,7 @@ const Dashboard = () => {
         </Grid>
 
         {user?.profile === "admin" && (
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12}>
             <Paper className={classes.tablePanel}>
               <div className={classes.panelHeader}>
                 <Typography variant="h6">Pesquisa de satisfação</Typography>
@@ -410,13 +511,15 @@ const Dashboard = () => {
         )}
 
         {user?.profile === "admin" && (
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12}>
             <Paper className={classes.tablePanel}>
               <div className={`${classes.panelHeader} ${classes.noPrint}`}>
-                <Typography variant="h6">Histórico de conversas</Typography>
-                <Button startIcon={<PictureAsPdfIcon />} onClick={() => window.print()}>
-                  PDF
-                </Button>
+                <div>
+                  <Typography variant="h6">Conversas concluidas</Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Consulte atendimentos finalizados e abra uma conversa para visualizar ou gerar PDF.
+                  </Typography>
+                </div>
               </div>
               <div className={`${classes.filters} ${classes.noPrint}`} style={{ marginBottom: 12 }}>
                 <TextField
@@ -433,35 +536,110 @@ const Dashboard = () => {
                 </Button>
               </div>
               <div className={classes.history}>
-                {history.map(ticket => (
-                  <div className={classes.conversation} key={ticket.id}>
-                    <Typography variant="subtitle2">
-                      #{ticket.id} - {ticket.contact?.name} - {ticket.status}
-                    </Typography>
-                    <Typography variant="caption" color="textSecondary">
-                      Fila: {ticket.queue?.name || "Sem fila"} | Atendente: {ticket.user?.name || "Sem atendente"} |
-                      Categoria: {ticket.category?.name || "Nao informada"} | Motivo: {ticket.closingReason?.name || "Nao informado"}
-                    </Typography>
-                    {(ticket.messages || []).map(message => (
-                      <div className={classes.message} key={message.id}>
-                        <Typography variant="caption" color="textSecondary">
-                          {message.fromMe ? "Atendente" : "Contato"} - {new Date(message.createdAt).toLocaleString()}
-                        </Typography>
-                        <Typography variant="body2">{message.body || `[${message.mediaType || "midia"}]`}</Typography>
-                      </div>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>ID</TableCell>
+                      <TableCell>Contato</TableCell>
+                      <TableCell>Telefone</TableCell>
+                      <TableCell>Atendente</TableCell>
+                      <TableCell>Categoria</TableCell>
+                      <TableCell>Motivo</TableCell>
+                      <TableCell>Data/hora</TableCell>
+                      <TableCell align="right">Acoes</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {history.map(ticket => (
+                      <TableRow key={ticket.id}>
+                        <TableCell>#{ticket.id}</TableCell>
+                        <TableCell>{ticket.contact?.name || "Contato"}</TableCell>
+                        <TableCell>{ticket.contact?.number || "-"}</TableCell>
+                        <TableCell>{ticket.user?.name || "Sem atendente"}</TableCell>
+                        <TableCell>{ticket.category?.name || "Nao informada"}</TableCell>
+                        <TableCell>{ticket.closingReason?.name || "Nao informado"}</TableCell>
+                        <TableCell>{new Date(ticket.updatedAt).toLocaleString()}</TableCell>
+                        <TableCell align="right">
+                          <IconButton size="small" onClick={() => openConversation(ticket.id)}>
+                            <VisibilityIcon />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </div>
-                ))}
-                {!history.length && (
-                  <Typography color="textSecondary">
-                    {loadingHistory ? "Carregando..." : "Nenhuma conversa encontrada."}
-                  </Typography>
-                )}
+                    {!history.length && (
+                      <TableRow>
+                        <TableCell colSpan={8}>
+                          {loadingHistory ? "Carregando..." : "Nenhuma conversa concluida encontrada."}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
               </div>
             </Paper>
           </Grid>
         )}
       </Grid>
+
+      <Dialog
+        open={!!selectedConversation || loadingConversation}
+        onClose={() => setSelectedConversation(null)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Conversa concluida {selectedConversation ? `#${selectedConversation.id}` : ""}
+        </DialogTitle>
+        <DialogContent>
+          {loadingConversation && !selectedConversation ? (
+            <Typography>Carregando conversa...</Typography>
+          ) : selectedConversation ? (
+            <div>
+              <div className={classes.conversationDialogMeta}>
+                <Typography variant="body2"><strong>Contato:</strong> {selectedConversation.contact?.name || "Contato"}</Typography>
+                <Typography variant="body2"><strong>Telefone:</strong> {selectedConversation.contact?.number || "-"}</Typography>
+                <Typography variant="body2"><strong>Atendente:</strong> {selectedConversation.user?.name || "Sem atendente"}</Typography>
+                <Typography variant="body2"><strong>Fila:</strong> {selectedConversation.queue?.name || "Sem fila"}</Typography>
+                <Typography variant="body2"><strong>Categoria:</strong> {selectedConversation.category?.name || "Nao informada"}</Typography>
+                <Typography variant="body2"><strong>Motivo:</strong> {selectedConversation.closingReason?.name || "Nao informado"}</Typography>
+                <Typography variant="body2"><strong>Abertura:</strong> {new Date(selectedConversation.createdAt).toLocaleString()}</Typography>
+                <Typography variant="body2"><strong>Conclusao:</strong> {new Date(selectedConversation.updatedAt).toLocaleString()}</Typography>
+              </div>
+
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Data/hora</TableCell>
+                    <TableCell>Origem</TableCell>
+                    <TableCell>Mensagem</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {(selectedConversation.messages || []).map(message => (
+                    <TableRow key={message.id}>
+                      <TableCell>{new Date(message.createdAt).toLocaleString()}</TableCell>
+                      <TableCell>{message.fromMe ? "Atendente/Sistema" : "Contato"}</TableCell>
+                      <TableCell>{message.body || `[${message.mediaType || "midia"}]`}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : null}
+        </DialogContent>
+        <DialogActions className={classes.noPrint}>
+          <Button onClick={() => setSelectedConversation(null)}>Fechar</Button>
+          <Button
+            color="primary"
+            variant="contained"
+            startIcon={<PictureAsPdfIcon />}
+            onClick={printConversationPdf}
+            disabled={!selectedConversation}
+          >
+            PDF
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

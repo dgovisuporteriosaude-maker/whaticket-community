@@ -31,6 +31,9 @@ const useStyles = makeStyles(theme => ({
     background: "#08111F",
     color: "#FFFFFF",
   },
+  rootCollapsed: {
+    padding: theme.spacing(1.25, 0.75, 2),
+  },
   groupLabel: {
     margin: theme.spacing(2.5, 0.25, 1),
     fontSize: 11,
@@ -76,6 +79,14 @@ const useStyles = makeStyles(theme => ({
       textOverflow: "ellipsis",
     },
   },
+  itemCollapsed: {
+    justifyContent: "center",
+    padding: theme.spacing(0.75),
+    "& .MuiListItemIcon-root": {
+      minWidth: 0,
+      justifyContent: "center",
+    },
+  },
   activeItem: {
     background: "#12306A",
     color: "#FFFFFF",
@@ -90,13 +101,18 @@ const useStyles = makeStyles(theme => ({
     paddingLeft: theme.spacing(0.75),
     borderLeft: "1px solid rgba(148, 163, 184, 0.14)",
   },
+  submenuCollapsed: {
+    marginLeft: 0,
+    paddingLeft: 0,
+    borderLeft: 0,
+  },
   sectionButton: {
     marginTop: theme.spacing(0.5),
   },
 }));
 
 function ListItemLink(props) {
-  const { icon, primary, to, className, activeClassName } = props;
+  const { icon, primary, to, className, activeClassName, collapsed, collapsedClassName } = props;
   const location = useLocation();
   const active = to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
 
@@ -110,7 +126,12 @@ function ListItemLink(props) {
 
   return (
     <li>
-      <ListItem button component={renderLink} className={`${className || ""} ${active ? activeClassName || "" : ""}`}>
+      <ListItem
+        button
+        component={renderLink}
+        title={collapsed ? primary : undefined}
+        className={`${className || ""} ${collapsed ? collapsedClassName || "" : ""} ${active ? activeClassName || "" : ""}`}
+      >
         {icon ? (
           <ListItemIcon style={{ color: "#FFFFFF" }}>
             {React.cloneElement(icon, {
@@ -119,7 +140,7 @@ function ListItemLink(props) {
             })}
           </ListItemIcon>
         ) : null}
-        <ListItemText primary={primary} />
+        {!collapsed && <ListItemText primary={primary} />}
       </ListItem>
     </li>
   );
@@ -132,7 +153,7 @@ const whiteIcon = icon =>
   });
 
 const MainListItems = (props) => {
-  const { drawerClose } = props;
+  const { drawerClose, drawerOpen = true } = props;
   const classes = useStyles();
   const { whatsApps } = useContext(WhatsAppsContext);
   const { user } = useContext(AuthContext);
@@ -162,14 +183,16 @@ const MainListItems = (props) => {
   }, [whatsApps]);
 
   return (
-    <div onClick={drawerClose} className={classes.root}>
-      <Typography className={classes.groupLabel}>ATENDIMENTO</Typography>
+    <div onClick={drawerClose} className={`${classes.root} ${!drawerOpen ? classes.rootCollapsed : ""}`}>
+      {drawerOpen && <Typography className={classes.groupLabel}>ATENDIMENTO</Typography>}
       <ListItemLink
         to="/tickets"
         primary="Atendimentos"
         icon={<WhatsAppIcon />}
         className={classes.item}
         activeClassName={classes.activeItem}
+        collapsed={!drawerOpen}
+        collapsedClassName={classes.itemCollapsed}
       />
       <ListItemLink
         to="/contacts"
@@ -177,24 +200,30 @@ const MainListItems = (props) => {
         icon={<ContactPhoneOutlinedIcon />}
         className={classes.item}
         activeClassName={classes.activeItem}
+        collapsed={!drawerOpen}
+        collapsedClassName={classes.itemCollapsed}
       />
 
-      <Typography className={classes.groupLabel}>GESTAO</Typography>
+      {drawerOpen && <Typography className={classes.groupLabel}>GESTAO</Typography>}
       <ListItemLink
         to="/"
         primary="Painel"
         icon={<DashboardOutlinedIcon />}
         className={classes.item}
         activeClassName={classes.activeItem}
+        collapsed={!drawerOpen}
+        collapsedClassName={classes.itemCollapsed}
       />
 
-      <Typography className={classes.groupLabel}>AUTOMACAO</Typography>
+      {drawerOpen && <Typography className={classes.groupLabel}>AUTOMACAO</Typography>}
       <ListItemLink
         to="/quickAnswers"
         primary="Respostas rápidas"
         icon={<QuestionAnswerOutlinedIcon />}
         className={classes.item}
         activeClassName={classes.activeItem}
+        collapsed={!drawerOpen}
+        collapsedClassName={classes.itemCollapsed}
       />
       <ListItemLink
         to="/campaigns-schedules"
@@ -202,16 +231,19 @@ const MainListItems = (props) => {
         icon={<EventNoteOutlinedIcon />}
         className={classes.item}
         activeClassName={classes.activeItem}
+        collapsed={!drawerOpen}
+        collapsedClassName={classes.itemCollapsed}
       />
       <Can
         role={user.profile}
         perform="drawer-admin-items:view"
         yes={() => (
           <>
-            <Typography className={classes.groupLabel}>CONFIGURACOES</Typography>
+            {drawerOpen && <Typography className={classes.groupLabel}>CONFIGURACOES</Typography>}
             <ListItem
               button
-              className={`${classes.item} ${classes.sectionButton}`}
+              title={!drawerOpen ? i18n.t("mainDrawer.listItems.administration") : undefined}
+              className={`${classes.item} ${classes.sectionButton} ${!drawerOpen ? classes.itemCollapsed : ""}`}
               onClick={event => {
                 event.stopPropagation();
                 setAdminOpen(prev => !prev);
@@ -220,10 +252,15 @@ const MainListItems = (props) => {
               <ListItemIcon>
                 {whiteIcon(<SecurityOutlinedIcon />)}
               </ListItemIcon>
-              <ListItemText primary={i18n.t("mainDrawer.listItems.administration")} />
-              {adminOpen ? whiteIcon(<ExpandLess />) : whiteIcon(<ExpandMore />)}
+              {drawerOpen && <ListItemText primary={i18n.t("mainDrawer.listItems.administration")} />}
+              {drawerOpen && (adminOpen ? whiteIcon(<ExpandLess />) : whiteIcon(<ExpandMore />))}
             </ListItem>
-            <Collapse in={adminOpen} timeout="auto" unmountOnExit className={classes.submenu}>
+            <Collapse
+              in={adminOpen}
+              timeout="auto"
+              unmountOnExit
+              className={`${classes.submenu} ${!drawerOpen ? classes.submenuCollapsed : ""}`}
+            >
               <ListItemLink
                 to="/connections"
                 primary={i18n.t("mainDrawer.listItems.connections")}
@@ -234,6 +271,8 @@ const MainListItems = (props) => {
                 }
                 className={classes.item}
                 activeClassName={classes.activeItem}
+                collapsed={!drawerOpen}
+                collapsedClassName={classes.itemCollapsed}
               />
               <ListItemLink
                 to="/users"
@@ -241,6 +280,8 @@ const MainListItems = (props) => {
                 icon={<PeopleAltOutlinedIcon />}
                 className={classes.item}
                 activeClassName={classes.activeItem}
+                collapsed={!drawerOpen}
+                collapsedClassName={classes.itemCollapsed}
               />
               <ListItemLink
                 to="/queues"
@@ -248,6 +289,8 @@ const MainListItems = (props) => {
                 icon={<AccountTreeOutlinedIcon />}
                 className={classes.item}
                 activeClassName={classes.activeItem}
+                collapsed={!drawerOpen}
+                collapsedClassName={classes.itemCollapsed}
               />
               <ListItemLink
                 to="/settings"
@@ -255,6 +298,8 @@ const MainListItems = (props) => {
                 icon={<SettingsOutlinedIcon />}
                 className={classes.item}
                 activeClassName={classes.activeItem}
+                collapsed={!drawerOpen}
+                collapsedClassName={classes.itemCollapsed}
               />
             </Collapse>
           </>

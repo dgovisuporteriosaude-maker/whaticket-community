@@ -33,6 +33,8 @@ import { MessageType, MessageAck } from "../providers/WhatsApp/types";
 const writeFileAsync = promisify(writeFile);
 const uraMenuLocks = new Set<number>();
 const AI_CLOSE_TAG = "[FECHAR TICKET]";
+const AI_NO_SAFE_ANSWER_HANDOFF_MESSAGE =
+  "Nao consegui identificar uma orientacao segura para esse caso com as informacoes disponiveis.\n\nPara evitar te passar uma informacao incorreta, vou encaminhar seu atendimento para um atendente.";
 
 export interface ContactPayload {
   name: string;
@@ -228,7 +230,8 @@ const handoffToHuman = async (
   messageBody: string,
   ticket: Ticket,
   contactPayload: ContactPayload,
-  aiSettingId?: number | null
+  aiSettingId?: number | null,
+  customerMessageOverride?: string | null
 ): Promise<boolean> => {
   const aiSetting = aiSettingId ? await AiSetting.findByPk(aiSettingId) : null;
   if (!aiSetting) return false;
@@ -240,6 +243,7 @@ const handoffToHuman = async (
 
   const queue = await Queue.findByPk(ticket.aiHumanHandoffQueueId);
   const customerMessage =
+    customerMessageOverride ||
     ticket.aiHumanHandoffMessage ||
     "O servico de IA se encontra indisponivel no momento. Vou transferir seu atendimento para um atendente.";
 
@@ -372,6 +376,28 @@ const isMoreHelpQuestion = (body: string): boolean =>
     normalizeSimpleText(body)
   );
 
+const getAiQuestionType = (body: string): string | null => {
+  const normalized = normalizeSimpleText(body);
+
+  if (
+    /consegui te ajudar|consegui ajudar|te ajudei|essa orientacao te ajudou|essa informacao te ajudou|isso te ajuda|isso resolve|resolve a situacao|conseguiu verificar|consegue verificar dessa forma|funcionou/i.test(
+      normalized
+    )
+  ) {
+    return "satisfaction_check";
+  }
+
+  if (
+    /ajudo em algo mais|ajuda em algo mais|posso ajudar em algo mais|posso ajudar em mais alguma coisa|mais alguma coisa|algo mais|precisa de mais alguma coisa/i.test(
+      normalized
+    )
+  ) {
+    return "more_help";
+  }
+
+  return null;
+};
+
 const getAiClosingReasonId = async (ticket: Ticket): Promise<number | null> => {
   if (ticket.aiAutoCloseReasonId) return ticket.aiAutoCloseReasonId;
 
@@ -408,7 +434,7 @@ const buildAiStateUpdate = (
   knowledgeIds?: number[],
   overrides: Record<string, unknown> = {}
 ): Record<string, unknown> => {
-  const askedMoreHelp = isMoreHelpQuestion(aiMessage);
+  const questionType = getAiQuestionType(aiMessage);
 
   return {
     aiHandled: true,
@@ -417,11 +443,11 @@ const buildAiStateUpdate = (
     lastAiAction: action,
     lastAiDecisionReason: reason || null,
     lastAiKnowledgeIds: knowledgeIds?.length ? JSON.stringify(knowledgeIds) : null,
-    lastAiAskedMoreHelp: askedMoreHelp,
-    lastAiQuestionType: askedMoreHelp ? "more_help" : null,
-    lastAiExpectedReply: askedMoreHelp ? "yes_no" : null,
+    lastAiAskedMoreHelp: questionType === "more_help",
+    lastAiQuestionType: questionType,
+    lastAiExpectedReply: questionType ? "yes_no" : null,
     lastAiQuestionOptions: null,
-    lastAiQuestionAt: askedMoreHelp ? new Date() : null,
+    lastAiQuestionAt: questionType ? new Date() : null,
     lastAiQuestionAttempts: 0,
     lastAiInteractionAt: new Date(),
     aiInteractionCount: Number(ticket.aiInteractionCount || 0) + 1,
@@ -531,14 +557,21 @@ const handleAiReply = async (
         messageBody,
         ticket,
         contactPayload,
-        aiSettingId
+        aiSettingId,
+        aiDecision.intencao === "erro_api_ia"
+          ? aiDecision.resposta
+          : aiDecision.acao === "sem_resposta_segura"
+            ? AI_NO_SAFE_ANSWER_HANDOFF_MESSAGE
+            : null
       );
 
       if (!handedOff) {
         await sendTextMessage(
           whatsappId,
           contactPayload,
-          "Nao encontrei uma resposta segura na base de conhecimento. Vou manter seu atendimento para continuidade por um atendente.",
+          aiDecision.intencao === "erro_api_ia"
+            ? aiDecision.resposta || "O servico de IA esta indisponivel no momento. Vou transferir seu atendimento para um atendente."
+            : AI_NO_SAFE_ANSWER_HANDOFF_MESSAGE,
           ticket
         );
         await ticket.update({

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import openSocket from "../../services/socket-io";
 
 import {
@@ -78,6 +78,40 @@ const useStyles = makeStyles(theme => ({
 	},
 	tableWrapper: {
 		overflowX: "auto"
+	},
+	richEditorToolbar: {
+		display: "flex",
+		gap: theme.spacing(1),
+		flexWrap: "wrap",
+		marginTop: theme.spacing(1),
+		marginBottom: theme.spacing(1)
+	},
+	richEditorButton: {
+		minWidth: 36,
+		padding: theme.spacing(0.5, 1),
+		textTransform: "none"
+	},
+	richEditor: {
+		minHeight: 220,
+		padding: theme.spacing(1.5),
+		border: `1px solid ${theme.palette.divider}`,
+		borderRadius: 8,
+		background: theme.palette.background.paper,
+		color: theme.palette.text.primary,
+		outline: "none",
+		lineHeight: 1.55,
+		"&:focus": {
+			borderColor: theme.palette.primary.main,
+			boxShadow: `0 0 0 1px ${theme.palette.primary.main}`
+		},
+		"& p": {
+			margin: "0 0 10px"
+		},
+		"& ul, & ol": {
+			marginTop: 0,
+			marginBottom: 10,
+			paddingLeft: 24
+		}
 	},
 	contentPaper: {
 		padding: theme.spacing(2),
@@ -370,7 +404,13 @@ const resources = [
 		title: "Artigo da base",
 		fields: [
 			{ name: "title", label: "Titulo", required: true },
-			{ name: "content", label: "Conteudo", multiline: true, required: true },
+			{
+				name: "contentHtml",
+				label: "Conteudo",
+				type: "richtext",
+				required: true,
+				helperText: "Cole do Word ou Google Docs. Negrito, listas, paragrafos e emojis serao preservados e convertidos para o formato do WhatsApp nas respostas."
+			},
 			{ name: "tags", label: "Palavras-chave", type: "tags" },
 			{ name: "active", label: "Ativo", type: "boolean" }
 		],
@@ -393,6 +433,20 @@ const defaultModelsByProvider = {
 	deepseek: "deepseek-chat"
 };
 
+const escapeHtml = value =>
+	String(value || "")
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&#39;");
+
+const plainTextToHtml = value =>
+	String(value || "")
+		.split(/\n{2,}/)
+		.map(paragraph => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
+		.join("");
+
 const defaultValue = field => {
 	if (field.name === "fixed") return false;
 	if (field.name === "aiHumanHandoffEnabled") return false;
@@ -404,6 +458,7 @@ const defaultValue = field => {
 	if (field.name === "confirmationMaxAttempts") return 2;
 	if (field.type === "boolean") return true;
 	if (field.type === "number") return "";
+	if (field.type === "richtext") return "";
 	if (field.name === "fallbackQueueId") return "";
 	if (field.name === "targetQueueId") return "";
 	if (field.name === "aiHumanHandoffQueueId") return "";
@@ -486,6 +541,68 @@ const SettingTextField = ({ name, getSettingValue, onChangeSetting, ...props }) 
 				}
 			}}
 		/>
+	);
+};
+
+const RichTextField = ({ label, value, onChange, required, helperText, classes }) => {
+	const editorRef = useRef(null);
+
+	useEffect(() => {
+		if (editorRef.current && editorRef.current.innerHTML !== (value || "")) {
+			editorRef.current.innerHTML = value || "";
+		}
+	}, [value]);
+
+	const runCommand = (command, commandValue = null) => {
+		editorRef.current?.focus();
+		document.execCommand(command, false, commandValue);
+		onChange(editorRef.current?.innerHTML || "");
+	};
+
+	const handlePaste = event => {
+		event.preventDefault();
+		const html = event.clipboardData.getData("text/html");
+		const text = event.clipboardData.getData("text/plain");
+		document.execCommand("insertHTML", false, html || plainTextToHtml(text));
+		onChange(editorRef.current?.innerHTML || "");
+	};
+
+	return (
+		<div>
+			<Typography variant="caption" color="textSecondary">
+				{label}{required ? " *" : ""}
+			</Typography>
+			<div className={classes.richEditorToolbar}>
+				<Button className={classes.richEditorButton} size="small" variant="outlined" onClick={() => runCommand("bold")}>
+					B
+				</Button>
+				<Button className={classes.richEditorButton} size="small" variant="outlined" onClick={() => runCommand("italic")}>
+					I
+				</Button>
+				<Button className={classes.richEditorButton} size="small" variant="outlined" onClick={() => runCommand("insertUnorderedList")}>
+					Lista
+				</Button>
+				<Button className={classes.richEditorButton} size="small" variant="outlined" onClick={() => runCommand("insertOrderedList")}>
+					1. Lista
+				</Button>
+				<Button className={classes.richEditorButton} size="small" variant="outlined" onClick={() => runCommand("formatBlock", "p")}>
+					Paragrafo
+				</Button>
+			</div>
+			<div
+				ref={editorRef}
+				className={classes.richEditor}
+				contentEditable
+				suppressContentEditableWarning
+				onInput={event => onChange(event.currentTarget.innerHTML)}
+				onPaste={handlePaste}
+			/>
+			{helperText && (
+				<Typography variant="caption" color="textSecondary">
+					{helperText}
+				</Typography>
+			)}
+		</div>
 	);
 };
 
@@ -749,9 +866,12 @@ const ResourcePanel = ({ resource, classes }) => {
 	const openEdit = row => {
 		const nextForm = {};
 		resource.fields.forEach(field => {
-			const value = row[field.name] === null || row[field.name] === undefined
-				? defaultValue(field)
+			const rawValue = field.type === "richtext" && !row[field.name] && row.content
+				? plainTextToHtml(row.content)
 				: row[field.name];
+			const value = rawValue === null || rawValue === undefined
+				? defaultValue(field)
+				: rawValue;
 			nextForm[field.name] = field.type === "tags" ? formatTagText(value) : value;
 		});
 		nextForm.id = row.id;
@@ -941,7 +1061,7 @@ const ResourcePanel = ({ resource, classes }) => {
 				<DialogContent>
 					<Grid container spacing={2}>
 						{resource.fields.map(field => (
-							<Grid item xs={12} sm={field.multiline ? 12 : 6} key={field.name}>
+							<Grid item xs={12} sm={field.multiline || field.type === "richtext" ? 12 : 6} key={field.name}>
 								{field.type === "boolean" ? (
 									<>
 										<FormControlLabel
@@ -1016,6 +1136,15 @@ const ResourcePanel = ({ resource, classes }) => {
 										</div>
 										{fieldHelper(field)}
 									</>
+								) : field.type === "richtext" ? (
+									<RichTextField
+										label={field.label}
+										value={form[field.name] || ""}
+										onChange={value => handleChange(field.name, value)}
+										required={!!field.required}
+										helperText={field.helperText}
+										classes={classes}
+									/>
 								) : field.template ? (
 									<>
 										<MessageTemplateField

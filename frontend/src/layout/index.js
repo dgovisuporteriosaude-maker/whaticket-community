@@ -316,7 +316,7 @@ const LoggedInLayout = ({ children }) => {
           </IconButton>
         </div>
         <List>
-          <MainListItems drawerClose={drawerClose} />
+          <MainListItems drawerClose={drawerClose} drawerOpen={drawerOpen} />
         </List>
       </Drawer>
       <UserModal

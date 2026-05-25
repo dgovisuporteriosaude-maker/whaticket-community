@@ -7,6 +7,7 @@ export interface KnowledgeFragment {
   title: string;
   tags: string | null;
   fragment: string;
+  contentHtml?: string | null;
   rank: number;
   source: "fts" | "fallback";
 }
@@ -83,7 +84,24 @@ const SYNONYMS: Record<string, string[]> = {
   diaria: ["diarias", "dia", "valor", "preco"],
   diarias: ["diaria", "dia", "valor", "preco"],
   senha: ["password", "login", "acesso"],
-  password: ["senha", "login", "acesso"]
+  password: ["senha", "login", "acesso"],
+  erro: ["problema", "falha", "bug", "travamento", "funciona"],
+  problema: ["erro", "falha", "bug", "travamento"],
+  falha: ["erro", "problema", "bug"],
+  travando: ["travamento", "erro", "problema"],
+  travamento: ["travando", "erro", "problema"],
+  finalizar: ["encerrar", "concluir", "salvar"],
+  finaliza: ["finalizar", "encerrar", "concluir"],
+  encerrar: ["finalizar", "concluir", "fechar"],
+  concluir: ["finalizar", "encerrar", "salvar"],
+  salvar: ["gravar", "concluir", "finalizar"],
+  tela: ["pagina", "janela", "sistema"],
+  branco: ["branca", "vazia", "carrega"],
+  branca: ["branco", "vazia", "carrega"],
+  agendar: ["marcar", "agenda", "horario", "consulta"],
+  agendamento: ["agenda", "marcar", "horario", "consulta"],
+  promocao: ["desconto", "oferta", "condicao"],
+  desconto: ["promocao", "oferta", "condicao"]
 };
 
 const getSearchTerms = (message: string): string[] => {
@@ -117,10 +135,11 @@ const runFullTextSearch = async (query: string): Promise<KnowledgeFragment[]> =>
       ),
       weighted_articles as (
         select
-          k.id,
-          k.title,
-          k.tags,
-          k.content,
+        k.id,
+        k.title,
+        k.tags,
+        k."contentHtml",
+        k.content,
           k."updatedAt",
           (
             setweight(to_tsvector('portuguese', coalesce(k.title, '')), 'A') ||
@@ -134,7 +153,16 @@ const runFullTextSearch = async (query: string): Promise<KnowledgeFragment[]> =>
         k.id,
         k.title,
         k.tags,
-        left(k.content, 900) as fragment,
+        k."contentHtml",
+        coalesce(
+          nullif(ts_headline(
+            'portuguese',
+            k.content,
+            search.q,
+            'MaxFragments=2, MinWords=18, MaxWords=55, StartSel="", StopSel="", FragmentDelimiter=" ... "'
+          ), ''),
+          left(k.content, 900)
+        ) as fragment,
         ts_rank_cd(k.document, search.q) as rank,
         'fts' as source
       from weighted_articles k, search
@@ -179,6 +207,7 @@ const runFallbackSearch = async (terms: string[]): Promise<KnowledgeFragment[]> 
         k.id,
         k.title,
         k.tags,
+        k."contentHtml",
         left(k.content, 900) as fragment,
         (${scoreParts})::float as rank,
         'fallback' as source

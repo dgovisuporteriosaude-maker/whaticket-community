@@ -18,6 +18,9 @@ class KnowledgeBaseArticle extends Model<KnowledgeBaseArticle> {
   @Column(DataType.TEXT)
   content: string;
 
+  @Column(DataType.TEXT)
+  contentHtml: string;
+
   @Column
   tags: string;
 

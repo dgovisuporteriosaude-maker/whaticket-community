@@ -6,6 +6,8 @@ import Ticket from "../../models/Ticket";
 import { logger } from "../../utils/logger";
 import GenerateAiResponseService, { AiProviderError } from "./GenerateAiResponseService";
 import SearchKnowledgeBaseService, { KnowledgeFragment } from "./SearchKnowledgeBaseService";
+import { Op } from "sequelize";
+import { htmlToWhatsAppText } from "../../utils/knowledgeFormatting";
 
 export type AiTicketAction =
   | "responder_com_base"
@@ -91,16 +93,32 @@ const parseOptions = (value: string | null | undefined): AiDecisionOption[] => {
   }
 };
 
-const getRecentHistory = async (ticketId: number): Promise<string> => {
+const getRecentHistory = async (ticket: Ticket): Promise<string> => {
+  const where: any = { ticketId: ticket.id };
+
+  if (ticket.aiStartedAt) {
+    where.createdAt = { [Op.gte]: ticket.aiStartedAt };
+  }
+
   const messages = await Message.findAll({
-    where: { ticketId },
+    where,
     order: [["createdAt", "DESC"]],
-    limit: 6
+    limit: 12
   });
 
   return messages
     .reverse()
-    .map(message => `${message.fromMe ? "IA/Sistema" : "Cliente"}: ${message.body || ""}`)
+    .map(message => {
+      const body = message.body || "";
+      const sender = !message.fromMe
+        ? "Cliente"
+        : String(message.id || "").startsWith("ticket-history-") ||
+            /atendimento encerrado|atendimento assumido|transferido|fila|ura|menu/i.test(body)
+          ? "Sistema"
+          : "IA";
+
+      return `${sender}: ${body}`;
+    })
     .join("\n");
 };
 
@@ -135,7 +153,9 @@ const buildKnowledgeFallbackDecision = (
   reason: string
 ): AiDecision => {
   const mainArticle = articles[0];
-  const fragment = cleanKnowledgeFragment(mainArticle?.fragment || "");
+  const fragment = mainArticle?.contentHtml
+    ? htmlToWhatsAppText(mainArticle.contentHtml)
+    : cleanKnowledgeFragment(mainArticle?.fragment || "");
 
   return {
     intencao: "pergunta_sobre_produto_ou_servico",
@@ -148,8 +168,49 @@ const buildKnowledgeFallbackDecision = (
     motivo: reason,
     knowledgeIds: articles.map(article => article.id),
     resposta: fragment
-      ? `De acordo com a base de conhecimento: ${fragment}`
+      ? [
+          "Encontrei uma orientacao que pode te ajudar:",
+          "",
+          fragment,
+          "",
+          "Consegue verificar dessa forma?"
+        ].join("\n")
       : undefined
+  };
+};
+
+const AI_UNAVAILABLE_HANDOFF_MESSAGE =
+  "O servico de IA esta indisponivel no momento. Vou transferir seu atendimento para um atendente.";
+
+const buildProviderErrorKnowledgeFallbackDecision = (
+  message: string,
+  articles: KnowledgeFragment[],
+  reason: string
+): AiDecision => {
+  const mainArticle = articles[0];
+  const fragment = mainArticle?.contentHtml
+    ? htmlToWhatsAppText(mainArticle.contentHtml)
+    : cleanKnowledgeFragment(mainArticle?.fragment || "");
+
+  return {
+    intencao: "pergunta_sobre_produto_ou_servico",
+    confianca: "media",
+    mensagemInterpretada: message,
+    contexto: "O provedor de IA ficou indisponivel, mas havia uma orientacao cadastrada para responder.",
+    baseEncontrada: true,
+    respostaSegura: !!fragment,
+    acao: fragment ? "responder_com_base" : "encaminhar_atendente",
+    motivo: reason,
+    knowledgeIds: articles.map(article => article.id),
+    resposta: fragment
+      ? [
+          "Tive uma instabilidade no servico de IA agora, mas encontrei uma orientacao que pode te ajudar:",
+          "",
+          fragment,
+          "",
+          "Consegue verificar dessa forma? Se nao resolver, encaminho seu atendimento para um atendente."
+        ].join("\n")
+      : AI_UNAVAILABLE_HANDOFF_MESSAGE
   };
 };
 
@@ -181,6 +242,7 @@ const getPreviousKnowledgeArticles = async (
     title: article.title,
     tags: article.tags,
     fragment: article.content,
+    contentHtml: article.contentHtml,
     rank: 0.3,
     source: "fallback"
   }));
@@ -204,14 +266,17 @@ const buildAnswerPrompt = ({
   "O atendimento pode ser de qualquer ramo: vendas, suporte, clinica, escola, loja, oficina, servicos, delivery, imobiliaria, financeiro, cobranca, agendamento, promocao ou relacionamento.",
   "Adapte a resposta ao tipo de atendimento configurado, a mensagem do cliente e a base encontrada.",
   "Use somente as informacoes da BASE DE CONHECIMENTO ENCONTRADA.",
+  "Nao copie a base literalmente quando puder explicar melhor. Reescreva de forma clara, humana e especifica para a pergunta do cliente.",
   "Nao invente valores, prazos, links, telefones, regras, procedimentos ou nomes que nao estejam na base.",
   "Pode explicar opcoes, sugerir proximos passos, listar possiveis causas, orientar uma triagem inicial, informar promocoes ou conduzir uma venda somente quando isso estiver sustentado pela base.",
   "Nao diga que consultou a base de conhecimento, banco de dados, RAG ou prompt.",
   "Nao retorne JSON, markdown tecnico, tags internas ou explicacoes do sistema.",
-  "Se a pergunta pedir calculo simples e a base trouxer o numero necessario, pode calcular de forma simples e mostrar o resultado.",
+  "Se a pergunta pedir calculo simples e a base trouxer o numero necessario, calcule o resultado e mostre a conta de forma curta. Exemplo: diaria de R$ 300 por 10 dias = R$ 3.000.",
+  "Se a pergunta atual for complemento da resposta anterior, use o historico recente para entender a continuidade. Exemplo: depois de informar diaria, 'e para 10 dias?' pede calculo com a diaria anterior.",
+  "Se a pergunta for diferente da anterior, responda o novo assunto usando a base encontrada; nao repita resposta antiga.",
   "Se a base nao tiver informacao suficiente para responder, diga que vai encaminhar para um atendente.",
   `Estado do atendimento atual:\n${buildTicketStateText(ticket)}`,
-  "Quando responder uma duvida com seguranca, finalize perguntando de forma natural se pode ajudar em algo mais.",
+  "Quando responder uma duvida com seguranca, finalize com uma pergunta natural de checagem ou continuidade, sem repetir sempre a mesma frase.",
   "Nao inclua [FECHAR TICKET] na resposta de uma duvida recem respondida. O fechamento deve acontecer somente se o cliente confirmar depois que nao precisa de mais nada, ou pedir explicitamente para fechar.",
   aiSetting.name ? `Nome da IA, se precisar se apresentar: ${aiSetting.name}.` : "",
   aiSetting.companyName ? `Empresa ou servico: ${aiSetting.companyName}.` : "",
@@ -358,7 +423,7 @@ const historyHasRecentAiAnswer = (history: string): boolean => {
     .filter(Boolean);
 
   const relevantAiLines = lines.filter(line =>
-    line.startsWith("IA/Sistema:") &&
+    (line.startsWith("IA:") || line.startsWith("IA/Sistema:")) &&
     !/menu|opcao|opção|ola como posso ajudar|seja bem-vindo/i.test(line)
   );
 
@@ -370,10 +435,20 @@ const lastAiAskedToFinish = (history: string): boolean => {
     .split("\n")
     .map(line => line.trim())
     .filter(Boolean);
-  const lastAiLine = [...lines].reverse().find(line => line.startsWith("IA/Sistema:")) || "";
+  const lastAiLine =
+    [...lines].reverse().find(line => line.startsWith("IA:") || line.startsWith("IA/Sistema:")) || "";
 
   return /posso finalizar|pode finalizar|finalizar seu atendimento|posso encerrar|pode encerrar|ajudo em algo mais|ajuda em algo mais|algo mais|mais alguma coisa|posso ajudar em mais alguma coisa|consegui te ajudar|consegui ajudar|te ajudei|essa informacao te ajudou|essa informação te ajudou/i.test(lastAiLine);
 };
+
+const isAffirmativeShortAnswer = (normalized: string): boolean =>
+  /^(sim|s|ss|certo|ok|okay|ta bom|esta bom|beleza|blz|perfeito|show|deu certo|funcionou|resolveu|resolvido|ajudou|me ajudou|obrigado|obrigada|obg|valeu|agradeco)$/.test(normalized);
+
+const isNegativeShortAnswer = (normalized: string): boolean =>
+  /^(nao|n|nao obrigado|nao obrigada|n obrigado|n obrigada|nao obg|n obg|nao valeu|n valeu|nao era so isso|n era so isso|nao so isso|n so isso|so isso|era so isso|era isso|nada mais)$/.test(normalized);
+
+const hasUnresolvedMeaning = (normalized: string): boolean =>
+  /\b(nao resolveu|n resolveu|nao ajudou|n ajudou|nao deu certo|n deu certo|continua com problema|ainda nao|nao funcionou|n funcionou|mas nao resolveu|mas n resolveu|obrigado mas nao|obg mas nao)\b/.test(normalized);
 
 const isContextualClosingIntent = (
   message: string,
@@ -389,9 +464,10 @@ const isContextualClosingIntent = (
     .trim();
 
   if (!normalized) return false;
+  if (hasUnresolvedMeaning(normalized)) return false;
 
   const explicitClose =
-    /\b(pode|pode sim|pode finalizar|pode fechar|pode encerrar|finaliza|finalizar|fechar|encerra|encerrar)\b/.test(normalized) ||
+    /\b(pode finalizar|pode fechar|pode encerrar|pode sim finalizar|pode sim fechar|pode sim encerrar|ja pode finalizar|ja pode fechar|ja pode encerrar|quero finalizar|quero fechar|quero encerrar|finaliza o atendimento|fechar atendimento|encerra o atendimento|encerrar atendimento)\b/.test(normalized) ||
     /\b(era so isso|era isso|so isso|somente isso|nao preciso de mais nada|nao quero mais nada|nada mais|tudo certo|tudo resolvido|resolveu|resolvido)\b/.test(normalized);
 
   if (explicitClose) return true;
@@ -402,12 +478,24 @@ const isContextualClosingIntent = (
   if (hasNewQuestion) return false;
 
   const isNegativeAnswerToMoreHelp =
+    ticket.lastAiQuestionType !== "satisfaction_check" &&
+    !/consegui te ajudar|consegui ajudar|te ajudei|essa orientacao te ajudou|essa informacao te ajudou|isso te ajuda|isso resolve|conseguiu verificar|consegue verificar dessa forma|funcionou/i.test(normalizeText(ticket.lastAiMessage || "")) &&
     (ticket.lastAiQuestionType === "more_help" ||
       ticket.lastAiAskedMoreHelp ||
       lastAiAskedToFinish(history)) &&
-    /^(nao|n|nao obrigado|nao obrigada|n obrigado|n obrigada|nao obg|n obg|nao valeu|n valeu|nao era so isso|n era so isso|nao so isso|n so isso)$/.test(normalized);
+    isNegativeShortAnswer(normalized);
 
   if (isNegativeAnswerToMoreHelp) return true;
+
+  const isPositiveAnswerToSatisfactionCheck =
+    ticket.lastAiQuestionType === "satisfaction_check" &&
+    isAffirmativeShortAnswer(normalized);
+
+  if (isPositiveAnswerToSatisfactionCheck) return true;
+
+  if (["missing_info", "confirmacao_opcao"].includes(String(ticket.lastAiQuestionType || ""))) {
+    return false;
+  }
 
   const isSatisfactionAfterAnswer =
     historyHasRecentAiAnswer(history) &&
@@ -428,11 +516,18 @@ const isPositiveAnswerToMoreHelp = (message: string, ticket: Ticket): boolean =>
   return /^(sim|s|ss|claro|pode|quero|preciso|tenho outra duvida|tenho mais uma duvida)$/.test(normalized);
 };
 
-const isContextualHandoffIntent = (message: string, history: string): boolean => {
+const isContextualHandoffIntent = (message: string, history: string, ticket: Ticket): boolean => {
   const normalized = normalizeText(message)
     .replace(/[^\w\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  if (
+    ticket.lastAiQuestionType === "satisfaction_check" &&
+    /^(nao|n|nao ajudou|nao resolveu|n ajudou|n resolveu|nao deu certo|n deu certo)$/.test(normalized)
+  ) {
+    return true;
+  }
 
   if (!historyHasRecentAiAnswer(history)) return false;
 
@@ -471,7 +566,10 @@ const buildDecisionPrompt = ({
     aiSetting.behaviorPrompt ? `Comportamento configurado:\n${aiSetting.behaviorPrompt}` : "",
     aiSetting.systemPrompt ? `Instrucoes adicionais:\n${aiSetting.systemPrompt}` : "",
     "Analise contexto, erros de digitacao, abreviacoes, historico recente, estado atual do ticket e a base de conhecimento.",
-    "Use o estado do atendimento para interpretar respostas curtas. Exemplo: se a ultima pergunta foi se podia ajudar em algo mais e o cliente disse 'nao obrigado', a intencao e encerramento. Se a ultima pergunta foi escolher uma opcao e o cliente disse '2' ou o nome da opcao, a intencao e confirmacao_opcao.",
+    "Use o estado do atendimento para interpretar respostas curtas. Se a ultima pergunta foi 'Consegui te ajudar?' ou uma checagem de satisfacao e o cliente respondeu 'sim', 'certo', 'obrigado' ou 'deu certo', a intencao e encerramento. Se respondeu 'nao' ou 'nao resolveu', a intencao e encaminhar_atendente.",
+    "Se a ultima pergunta foi 'Posso ajudar em algo mais?' e o cliente respondeu 'nao', 'nao obrigado' ou 'era so isso', a intencao e encerramento. Se respondeu 'sim', a intencao e continuar pedindo mais detalhes.",
+    "Se a ultima pergunta foi diagnostica, como 'o erro acontece ao finalizar?', respostas como 'sim' ou 'nao' nao significam encerramento; continue o diagnostico.",
+    "Se a ultima pergunta foi escolher uma opcao e o cliente disse '2' ou o nome da opcao, a intencao e confirmacao_opcao.",
     "REGRA DE ESCOPO: quando a base de conhecimento relevante tiver artigos, considere que o assunto faz parte do escopo do atendimento, mesmo que o nome da empresa, fila ou tipo de atendimento pareca diferente.",
     "A base de conhecimento encontrada tem prioridade sobre qualquer suposicao pelo nome da empresa, nome da fila ou tipo de atendimento.",
     "Se houver artigo relevante na base, nunca diga que o assunto nao parece relacionado ao atendimento antes de avaliar o conteudo do artigo.",
@@ -479,11 +577,16 @@ const buildDecisionPrompt = ({
     "Pode responder perguntas sobre quem e a IA, qual seu papel, ou explicar uma resposta anterior usando o perfil configurado e o historico da conversa.",
     "Pode conversar de forma natural e humanizada, mas sem criar informacoes comerciais, tecnicas, promocionais, financeiras, medicas, juridicas ou operacionais fora da base.",
     "Pode vender, orientar, sugerir possiveis causas, explicar promocao, informar preco, conduzir agendamento, acompanhar pedido ou tirar duvidas somente quando houver base suficiente.",
+    "Pode fazer calculos simples quando a base trouxer os dados numericos necessarios, como diaria x quantidade de dias, valor unitario x unidades ou soma simples.",
+    "Se a pergunta atual for uma continuacao da resposta anterior, use o historico recente para entender o sentido. Exemplo: depois de informar uma diaria, 'quanto fica 10 dias?' deve ser tratado como calculo.",
+    "Nao use expressoes como base de conhecimento, manual, artigo encontrado, documento interno, RAG ou prompt na resposta ao cliente.",
+    "Nao repita a mesma resposta se o cliente mudou de assunto. Reavalie a mensagem atual e o RAG encontrado.",
     "Se nao houver base segura, use acao encaminhar_atendente ou sem_resposta_segura.",
     "Se houver varias possibilidades na base e a pergunta estiver ambigua, use pedir_confirmacao.",
     "Se o cliente pedir atendente/humano/pessoa ou rejeitar robo/IA, use encaminhar_atendente.",
     "Use encerrar_atendimento somente quando o contexto mostrar que o cliente ja recebeu a informacao/solucao que queria e indicou claramente que nao precisa de mais nada.",
     "Nao encerre apenas por uma palavra isolada como obrigado, ok, sim ou valeu se o contexto ainda nao indicar resolucao.",
+    "Nunca interprete uma frase como 'erro ao encerrar', 'erro ao finalizar', 'nao consigo finalizar' ou 'problema para fechar' como pedido de encerramento. Isso e relato de problema.",
     "Se o cliente agradecer depois de uma resposta util da IA e o historico indicar que a duvida foi atendida, pode encerrar_atendimento.",
     "Se o cliente pedir para fechar/finalizar, disser que era so isso, nao quer mais nada, tudo certo, resolveu ou pode fechar, use encerrar_atendimento.",
     "Se o cliente disser que nao resolveu ou ainda tem problema, use encaminhar_atendente.",
@@ -582,7 +685,7 @@ const DecideAiTicketActionService = async ({
   }
 
   const pendingOptions = parseOptions(ticket.lastAiQuestionOptions);
-  const history = await getRecentHistory(ticket.id);
+  const history = await getRecentHistory(ticket);
 
   if (isContextualClosingIntent(message, history, ticket, pendingOptions)) {
     return {
@@ -612,7 +715,7 @@ const DecideAiTicketActionService = async ({
     };
   }
 
-  if (isContextualHandoffIntent(message, history)) {
+  if (isContextualHandoffIntent(message, history, ticket)) {
     return {
       intencao: "cliente_nao_satisfeito",
       confianca: "alta",
@@ -681,10 +784,10 @@ const DecideAiTicketActionService = async ({
   } catch (error) {
     if (error instanceof AiProviderError) {
       if (articles.length > 0) {
-        const fallbackDecision = buildKnowledgeFallbackDecision(
+        const fallbackDecision = buildProviderErrorKnowledgeFallbackDecision(
           message,
           articles,
-          `Fallback local: provedor de IA indisponivel (${error.message}), mas a base foi encontrada.`
+          `Fallback organizado: provedor de IA indisponivel (${error.message}), mas uma orientacao foi encontrada.`
         );
 
         logger.warn(
@@ -698,11 +801,24 @@ const DecideAiTicketActionService = async ({
             knowledgeId: articles[0]?.id,
             knowledgeTitle: articles[0]?.title
           },
-          "[AI ACTION] Provider failed, knowledge fallback used"
+          "[AI ACTION] Provider failed, formatted knowledge fallback used"
         );
 
         return fallbackDecision;
       }
+
+      logger.warn(
+        {
+          ticketId: ticket.id,
+          aiSettingId: aiSetting.id,
+          provider: error.provider,
+          status: error.status,
+          code: error.code,
+          knowledgeFound: articles.length,
+          knowledgeIds: articles.map(article => article.id)
+        },
+        "[AI ACTION] Provider failed, handoff requested"
+      );
 
       return {
         intencao: "erro_api_ia",
@@ -712,7 +828,9 @@ const DecideAiTicketActionService = async ({
         baseEncontrada: articles.length > 0,
         respostaSegura: false,
         acao: "encaminhar_atendente",
-        motivo: `Servico de IA indisponivel: ${error.message}`
+        motivo: `Servico de IA indisponivel: ${error.message}`,
+        resposta: AI_UNAVAILABLE_HANDOFF_MESSAGE,
+        knowledgeIds: articles.map(article => article.id)
       };
     }
 

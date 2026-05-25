@@ -24,13 +24,17 @@ const requireAdmin = (req: Request) => {
   }
 };
 
+const dateFilter = (start: Date, end: Date) => ({
+  [Op.between]: [start, end]
+});
+
 const groupRows = async (column: string, alias: string, start: Date, end: Date) => {
   const rows = await Ticket.findAll({
     attributes: [
       [col(column) as any, "name"],
       [fn("COUNT", col("Ticket.id")), "total"]
     ],
-    where: { createdAt: { [Op.between]: [+start, +end] } } as any,
+    where: { createdAt: dateFilter(start, end) } as any,
     include: [
       {
         model: alias === "category" ? TicketCategory : ClosingReason,
@@ -51,7 +55,7 @@ const groupRows = async (column: string, alias: string, start: Date, end: Date) 
 
 export const dashboard = async (req: Request, res: Response): Promise<Response> => {
   const { start, end } = parseDateRange(req);
-  const where = { createdAt: { [Op.between]: [+start, +end] } } as any;
+  const where = { createdAt: dateFilter(start, end) } as any;
   const ticketCreatedDate = fn("DATE", col("Ticket.createdAt"));
 
   const [total, open, pending, closed, byCategory, byReason, byQueue, byUser, byDay] = await Promise.all([
@@ -107,7 +111,7 @@ export const exportTickets = async (req: Request, res: Response): Promise<Respon
 
   const { start, end } = parseDateRange(req);
   const tickets = await Ticket.findAll({
-    where: { createdAt: { [Op.between]: [+start, +end] } } as any,
+    where: { createdAt: dateFilter(start, end) } as any,
     include: [
       { model: Contact, as: "contact", attributes: ["name", "number"] },
       { model: Queue, as: "queue", attributes: ["name"] },
@@ -160,8 +164,21 @@ export const conversationHistory = async (req: Request, res: Response): Promise<
   const sanitizedSearch = `%${searchParam.toLowerCase().trim()}%`;
 
   const tickets = await Ticket.findAll({
+    attributes: [
+      "id",
+      "status",
+      "createdAt",
+      "updatedAt",
+      "lastMessage",
+      "contactId",
+      "queueId",
+      "userId",
+      "categoryId",
+      "closingReasonId"
+    ],
     where: {
-      createdAt: { [Op.between]: [+start, +end] }
+      status: "closed",
+      createdAt: dateFilter(start, end)
     },
     include: [
       {
@@ -177,6 +194,39 @@ export const conversationHistory = async (req: Request, res: Response): Promise<
       { model: User, as: "user", attributes: ["name"] },
       { model: TicketCategory, as: "category", attributes: ["name"] },
       { model: ClosingReason, as: "closingReason", attributes: ["name"] },
+    ],
+    order: [["updatedAt", "DESC"]],
+    limit: 100
+  });
+
+  return res.json(tickets);
+};
+
+export const conversationDetail = async (req: Request, res: Response): Promise<Response> => {
+  requireAdmin(req);
+
+  const { ticketId } = req.params;
+  const ticket = await Ticket.findOne({
+    attributes: [
+      "id",
+      "status",
+      "createdAt",
+      "updatedAt",
+      "lastMessage",
+      "contactId",
+      "queueId",
+      "userId",
+      "categoryId",
+      "closingReasonId",
+      "closingNote"
+    ],
+    where: { id: ticketId, status: "closed" },
+    include: [
+      { model: Contact, as: "contact", attributes: ["id", "name", "number"] },
+      { model: Queue, as: "queue", attributes: ["name"] },
+      { model: User, as: "user", attributes: ["name"] },
+      { model: TicketCategory, as: "category", attributes: ["name"] },
+      { model: ClosingReason, as: "closingReason", attributes: ["name"] },
       {
         model: Message,
         as: "messages",
@@ -184,14 +234,14 @@ export const conversationHistory = async (req: Request, res: Response): Promise<
         required: false
       }
     ],
-    order: [
-      ["createdAt", "DESC"],
-      [{ model: Message, as: "messages" }, "createdAt", "ASC"]
-    ],
-    limit: 100
+    order: [[{ model: Message, as: "messages" }, "createdAt", "ASC"]]
   });
 
-  return res.json(tickets);
+  if (!ticket) {
+    throw new AppError("ERR_TICKET_NOT_FOUND", 404);
+  }
+
+  return res.json(ticket);
 };
 
 export const satisfaction = async (req: Request, res: Response): Promise<Response> => {
@@ -199,7 +249,7 @@ export const satisfaction = async (req: Request, res: Response): Promise<Respons
 
   const { start, end } = parseDateRange(req);
   const rows = await SatisfactionSurveyResponse.findAll({
-    where: { createdAt: { [Op.between]: [+start, +end] } } as any,
+    where: { createdAt: dateFilter(start, end) } as any,
     include: [
       { model: Contact, as: "contact", attributes: ["name", "number"] },
       { model: Queue, as: "queue", attributes: ["name"] },

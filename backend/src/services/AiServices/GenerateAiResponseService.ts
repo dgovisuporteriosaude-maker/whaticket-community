@@ -286,12 +286,14 @@ const GenerateAiResponseService = async ({
     systemPromptOverride || aiSetting.systemPrompt || "",
     "Responda sempre considerando a mensagem atual do usuario.",
     "Considere obrigatoriamente as 3 ultimas mensagens enviadas no historico para entender respostas curtas como 'nao', 'sim', 'so isso' ou 'pode fechar'.",
-    "Use a base de conhecimento quando ela tiver informacao relacionada. Se a base nao tiver informacao suficiente, diga isso de forma objetiva e peca os dados necessarios ou encaminhe para atendimento humano.",
-    "Nao invente valores, prazos, links, telefones, regras, nomes, procedimentos ou orientacoes que nao estejam no perfil configurado ou na base de conhecimento.",
+    "Use as informacoes internas recebidas quando elas tiverem relacao com a pergunta. Se nao houver informacao suficiente, diga isso de forma objetiva e peca os dados necessarios ou encaminhe para atendimento humano.",
+    "Nao mencione base de conhecimento, manual, documento interno, RAG, banco de dados ou prompt para o cliente.",
+    "Nao invente valores, prazos, links, telefones, regras, nomes, procedimentos ou orientacoes que nao estejam no perfil configurado ou nas informacoes internas.",
+    "Pode reformular, resumir, organizar em passos e fazer calculos simples quando os dados numericos estiverem disponiveis.",
     "Nao assuma ramo, produto, servico, fila ou equipe fixa. Use somente as configuracoes e a base cadastrada.",
     "Se identificar pelo contexto que o usuario esta satisfeito, pediu fechamento ou nao precisa de mais nada, termine a resposta com a tag [FECHAR TICKET].",
     contactName ? `Nome do contato: ${contactName}` : "",
-    knowledgeContext ? `Base de conhecimento:\n${knowledgeContext}` : ""
+    knowledgeContext ? `Informacoes internas disponiveis:\n${knowledgeContext}` : ""
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -300,8 +302,8 @@ const GenerateAiResponseService = async ({
   const model = getConfiguredModel(provider, aiSetting.model);
   const temperature = getProviderTemperature(provider, aiSetting.temperature);
   const maxTokens = getProviderMaxTokens(provider, aiSetting.maxTokens);
-  const userMessage = truncateByApproxTokens(message, 900);
-  const safeSystemPrompt = truncateByApproxTokens(systemPrompt, 900);
+  const userMessage = truncateByApproxTokens(message, 700);
+  const safeSystemPrompt = truncateByApproxTokens(systemPrompt, 1400);
   const promptTokensEstimate =
     estimateTokens(safeSystemPrompt) +
     estimateTokens(userMessage) +
@@ -324,7 +326,7 @@ const GenerateAiResponseService = async ({
         messages: [
           ...recentMessages.map(item => ({
             role: item.role as "user" | "assistant",
-            content: truncateByApproxTokens(item.content, 160)
+            content: truncateByApproxTokens(item.content, 220)
           })),
           {
             role: "user" as const,
