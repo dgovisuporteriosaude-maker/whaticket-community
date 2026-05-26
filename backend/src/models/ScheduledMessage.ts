@@ -47,6 +47,15 @@ class ScheduledMessage extends Model<ScheduledMessage> {
   message: string;
 
   @Column
+  mediaUrl: string;
+
+  @Column
+  mediaType: string;
+
+  @Column
+  mediaName: string;
+
+  @Column
   scheduledAt: Date;
 
   @Column

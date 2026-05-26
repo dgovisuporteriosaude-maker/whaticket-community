@@ -7,6 +7,12 @@ interface QueueData {
   color: string;
   useAI?: boolean;
   aiSettingId?: number | null;
+  businessHoursEnabled?: boolean;
+  businessHours?: string | null;
+  unavailableMessage?: string | null;
+  unavailableMediaUrl?: string | null;
+  unavailableMediaType?: string | null;
+  unavailableMediaName?: string | null;
 }
 
 const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
@@ -58,6 +64,20 @@ const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
     await queueSchema.validate({ color, name });
   } catch (err) {
     throw new AppError(err.message);
+  }
+
+  if (queueData.useAI && !queueData.aiSettingId) {
+    throw new AppError("Escolha a configuracao de IA ou desative o uso de IA nesta fila.", 400);
+  }
+
+  if (queueData.businessHoursEnabled) {
+    if (!queueData.businessHours || !String(queueData.businessHours).trim()) {
+      throw new AppError("Informe o horario de funcionamento da fila.", 400);
+    }
+
+    if (!queueData.unavailableMessage && !queueData.unavailableMediaUrl) {
+      throw new AppError("Informe a mensagem de indisponibilidade da fila.", 400);
+    }
   }
 
   const queue = await Queue.create(queueData);

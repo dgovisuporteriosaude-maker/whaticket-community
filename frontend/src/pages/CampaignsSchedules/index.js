@@ -28,6 +28,7 @@ import { toast } from "react-toastify";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import MessageTemplateField from "../../components/MessageTemplateField";
 
 const useStyles = makeStyles(theme => ({
   root: {
@@ -276,6 +277,8 @@ const CampaignsSchedules = () => {
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [campaignForm, setCampaignForm] = useState(initialCampaign);
   const [scheduleForm, setScheduleForm] = useState(initialSchedule);
+  const [campaignMedia, setCampaignMedia] = useState(null);
+  const [scheduleMedia, setScheduleMedia] = useState(null);
   const [editingScheduleId, setEditingScheduleId] = useState(null);
 
   const loadData = async () => {
@@ -381,10 +384,17 @@ const CampaignsSchedules = () => {
       );
       if (!confirmed) return;
 
-      await api.post("/campaigns", campaignForm);
+      const payload = new FormData();
+      Object.entries(campaignForm).forEach(([key, value]) => {
+        payload.append(key, Array.isArray(value) ? JSON.stringify(value) : value);
+      });
+      if (campaignMedia) payload.append("media", campaignMedia);
+
+      await api.post("/campaigns", payload, { headers: { "Content-Type": "multipart/form-data" } });
       toast.success("Campanha iniciada.");
       setCampaignModalOpen(false);
       setCampaignForm(initialCampaign);
+      setCampaignMedia(null);
       loadData();
     } catch (err) {
       toastError(err);
@@ -422,6 +432,7 @@ const CampaignsSchedules = () => {
   const openNewScheduleModal = () => {
     setEditingScheduleId(null);
     setScheduleForm(initialSchedule);
+    setScheduleMedia(null);
     setScheduleModalOpen(true);
   };
 
@@ -438,6 +449,7 @@ const CampaignsSchedules = () => {
       pauseMinutes: Math.max(1, Math.round((schedule.pauseSeconds || 300) / 60)),
       whatsappId: schedule.whatsappId || ""
     });
+    setScheduleMedia(null);
     setScheduleModalOpen(true);
   };
 
@@ -445,22 +457,22 @@ const CampaignsSchedules = () => {
     setScheduleModalOpen(false);
     setEditingScheduleId(null);
     setScheduleForm(initialSchedule);
+    setScheduleMedia(null);
   };
 
   const saveSchedule = async () => {
     try {
+      const payload = new FormData();
+      Object.entries(scheduleForm).forEach(([key, value]) => {
+        payload.append(key, Array.isArray(value) ? JSON.stringify(value) : value);
+      });
+      if (scheduleMedia) payload.append("media", scheduleMedia);
+
       if (editingScheduleId) {
-        await api.put(`/scheduled-messages/${editingScheduleId}`, {
-          message: scheduleForm.message,
-          scheduledAt: scheduleForm.scheduledAt,
-          intervalPattern: scheduleForm.intervalPattern,
-          pauseAfter: scheduleForm.pauseAfter,
-          pauseMinutes: scheduleForm.pauseMinutes,
-          whatsappId: scheduleForm.whatsappId
-        });
+        await api.put(`/scheduled-messages/${editingScheduleId}`, payload, { headers: { "Content-Type": "multipart/form-data" } });
         toast.success("Agendamento atualizado.");
       } else {
-        await api.post("/scheduled-messages", scheduleForm);
+        await api.post("/scheduled-messages", payload, { headers: { "Content-Type": "multipart/form-data" } });
         toast.success("Mensagem agendada.");
       }
 
@@ -737,7 +749,16 @@ const CampaignsSchedules = () => {
               </TextField>
             </Grid>
             <Grid item xs={12}>
-              <TextField fullWidth required multiline rows={5} margin="dense" variant="outlined" label="Mensagem" name="message" value={campaignForm.message} onChange={handleCampaignChange} />
+              <MessageTemplateField
+                label="Mensagem"
+                name="message"
+                value={campaignForm.message}
+                onChange={handleCampaignChange}
+                rows={5}
+                required
+                onMediaChange={setCampaignMedia}
+                mediaName={campaignMedia?.name}
+              />
             </Grid>
           </Grid>
         </DialogContent>
@@ -808,7 +829,16 @@ const CampaignsSchedules = () => {
               </TextField>
             </Grid>
             <Grid item xs={12}>
-              <TextField fullWidth required multiline rows={5} margin="dense" variant="outlined" label="Mensagem" name="message" value={scheduleForm.message} onChange={handleScheduleChange} />
+              <MessageTemplateField
+                label="Mensagem"
+                name="message"
+                value={scheduleForm.message}
+                onChange={handleScheduleChange}
+                rows={5}
+                required
+                onMediaChange={setScheduleMedia}
+                mediaName={scheduleMedia?.name}
+              />
             </Grid>
           </Grid>
         </DialogContent>

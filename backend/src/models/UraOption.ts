@@ -30,6 +30,15 @@ class UraOption extends Model<UraOption> {
   @Column(DataType.TEXT)
   responseMessage: string;
 
+  @Column
+  responseMediaUrl: string;
+
+  @Column
+  responseMediaType: string;
+
+  @Column
+  responseMediaName: string;
+
   @Default("SEND_MESSAGE")
   @Column
   action: string;

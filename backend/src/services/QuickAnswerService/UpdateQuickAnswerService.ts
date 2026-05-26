@@ -6,6 +6,9 @@ interface QuickAnswerData {
   shortcut?: string;
   message?: string;
   global?: boolean;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  mediaName?: string | null;
 }
 
 interface Request {
@@ -21,11 +24,11 @@ const UpdateQuickAnswerService = async ({
   userId,
   userProfile
 }: Request): Promise<QuickAnswer> => {
-  const { shortcut, message, global } = quickAnswerData;
+  const { shortcut, message, global, mediaUrl, mediaType, mediaName } = quickAnswerData;
 
   const quickAnswer = await QuickAnswer.findOne({
     where: { id: quickAnswerId },
-    attributes: ["id", "shortcut", "message", "global", "userId"]
+    attributes: ["id", "shortcut", "message", "global", "userId", "mediaUrl", "mediaType", "mediaName"]
   });
 
   if (!quickAnswer) {
@@ -43,11 +46,14 @@ const UpdateQuickAnswerService = async ({
   await quickAnswer.update({
     shortcut,
     message,
+    mediaUrl,
+    mediaType,
+    mediaName,
     global: userProfile === "admin" && global !== undefined ? global : quickAnswer.global
   });
 
   await quickAnswer.reload({
-    attributes: ["id", "shortcut", "message", "global", "userId"],
+    attributes: ["id", "shortcut", "message", "global", "userId", "mediaUrl", "mediaType", "mediaName"],
     include: [{ model: User, as: "user", attributes: ["id", "name"] }]
   });
 

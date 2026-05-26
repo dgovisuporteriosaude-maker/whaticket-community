@@ -25,7 +25,10 @@ const dispatchCampaignRecipient = async (recipient: CampaignContact) => {
     await sendDirectMessage({
       contact: recipient.contact,
       body: campaign.message,
-      whatsappId: campaign.whatsappId
+      whatsappId: campaign.whatsappId,
+      mediaUrl: campaign.mediaUrl,
+      mediaType: campaign.mediaType,
+      mediaName: campaign.mediaName
     });
 
     const sentCount = await CampaignContact.count({
@@ -80,7 +83,10 @@ const dispatchScheduledMessage = async (schedule: ScheduledMessage) => {
     await sendDirectMessage({
       contact: schedule.contact,
       body: schedule.message,
-      whatsappId: schedule.whatsappId
+      whatsappId: schedule.whatsappId,
+      mediaUrl: schedule.mediaUrl,
+      mediaType: schedule.mediaType,
+      mediaName: schedule.mediaName
     });
 
     await schedule.update({

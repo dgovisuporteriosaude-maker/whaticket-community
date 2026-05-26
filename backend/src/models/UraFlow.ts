@@ -22,6 +22,15 @@ class UraFlow extends Model<UraFlow> {
   @Column(DataType.TEXT)
   welcomeMessage: string;
 
+  @Column
+  welcomeMediaUrl: string;
+
+  @Column
+  welcomeMediaType: string;
+
+  @Column
+  welcomeMediaName: string;
+
   @Column(DataType.TEXT)
   invalidOptionMessage: string;
 

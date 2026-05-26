@@ -13,6 +13,34 @@ const include = [
   { model: Whatsapp, as: "whatsapp", attributes: ["id", "name"] }
 ];
 
+const parseNumberArray = (value: any): number[] => {
+  if (Array.isArray(value)) return value.map(Number).filter(Number.isFinite);
+  if (value === null || value === undefined || value === "") return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(Number).filter(Number.isFinite);
+  } catch (error) {
+    // falls back to comma separated values
+  }
+
+  return String(value)
+    .split(",")
+    .map(item => Number(item.trim()))
+    .filter(Number.isFinite);
+};
+
+const mediaDataFromRequest = (req: Request) => {
+  const file = req.file as Express.Multer.File | undefined;
+  if (!file) return {};
+
+  return {
+    mediaUrl: file.filename,
+    mediaType: file.mimetype,
+    mediaName: file.originalname
+  };
+};
+
 const parseScheduledAt = (value: string | Date): Date => {
   if (!value) {
     throw new AppError("ERR_SCHEDULE_REQUIRED_FIELDS", 400);
@@ -78,11 +106,12 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const parsedScheduledAt = parseScheduledAt(scheduledAt);
 
   const selectedContactIds = [
-    ...(contactId ? [contactId] : []),
-    ...contactIds
-  ].map(Number);
+    ...(contactId ? [Number(contactId)] : []),
+    ...parseNumberArray(contactIds)
+  ];
+  const selectedTagIds = parseNumberArray(tagIds);
 
-  if (!selectedContactIds.length && !tagIds.length) {
+  if (!selectedContactIds.length && !selectedTagIds.length) {
     throw new AppError("ERR_SCHEDULE_RECIPIENTS_REQUIRED", 400);
   }
 
@@ -103,14 +132,14 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   const contactRows = await Contact.findAll({
     where: contactWhere,
-    include: tagIds.length
+    include: selectedTagIds.length
       ? [
           {
             model: Tag,
             as: "tags",
             attributes: [],
             through: { attributes: [] },
-            where: { id: { [Op.in]: tagIds.map(Number) } },
+            where: { id: { [Op.in]: selectedTagIds } },
             required: true
           }
         ]
@@ -133,6 +162,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
       batchId,
       sequence: index,
       message,
+      ...mediaDataFromRequest(req),
       scheduledAt: parsedScheduledAt,
       nextRunAt: index === 0 ? parsedScheduledAt : null,
       intervalSeconds: Number(parseInt(String(intervalPattern).split(":")[0], 10) || 30),
@@ -173,6 +203,7 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   } = req.body;
 
   if (message !== undefined) allowedData.message = message;
+  Object.assign(allowedData, mediaDataFromRequest(req));
   if (whatsappId !== undefined) allowedData.whatsappId = whatsappId || null;
   if (intervalPattern !== undefined) {
     validateIntervalPattern(intervalPattern);

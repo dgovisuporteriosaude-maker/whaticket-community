@@ -96,6 +96,15 @@ function isEnabled(value: any): boolean {
   return value === true || value === "true" || value === "enabled";
 }
 
+function applyMediaUpload(data: any, req: Request, fields: { url: string; type: string; name: string }): void {
+  const file = req.file as Express.Multer.File | undefined;
+  if (!file) return;
+
+  data[fields.url] = file.filename;
+  data[fields.type] = file.mimetype;
+  data[fields.name] = file.originalname;
+}
+
 function normalizeKeywordText(value: any): string | null {
   if (value === null || value === undefined) return null;
 
@@ -156,6 +165,9 @@ function normalizeBody(resource: string, body: any): any {
       name: data.name,
       description: data.description || null,
       welcomeMessage: data.welcomeMessage || "",
+      welcomeMediaUrl: data.welcomeMediaUrl || null,
+      welcomeMediaType: data.welcomeMediaType || null,
+      welcomeMediaName: data.welcomeMediaName || null,
       invalidOptionMessage: data.invalidOptionMessage || null,
       maxInvalidAttempts: Number(data.maxInvalidAttempts || 3),
       fallbackQueueId: nullableNumber(data.fallbackQueueId),
@@ -218,6 +230,9 @@ function normalizeBody(resource: string, body: any): any {
       optionKey: data.optionKey,
       title: data.title,
       responseMessage: data.responseMessage || null,
+      responseMediaUrl: data.responseMediaUrl || null,
+      responseMediaType: data.responseMediaType || null,
+      responseMediaName: data.responseMediaName || null,
       action,
       targetQueueId: nullableNumber(data.targetQueueId),
       aiHumanHandoffEnabled,
@@ -335,6 +350,22 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const { resource } = req.params;
   const model = getModel(resource);
   const data = normalizeBody(resource, req.body);
+  if (resource === "uraFlows") {
+    applyMediaUpload(data, req, { url: "welcomeMediaUrl", type: "welcomeMediaType", name: "welcomeMediaName" });
+    if (!req.file) {
+      delete data.welcomeMediaUrl;
+      delete data.welcomeMediaType;
+      delete data.welcomeMediaName;
+    }
+  }
+  if (resource === "uraOptions") {
+    applyMediaUpload(data, req, { url: "responseMediaUrl", type: "responseMediaType", name: "responseMediaName" });
+    if (!req.file) {
+      delete data.responseMediaUrl;
+      delete data.responseMediaType;
+      delete data.responseMediaName;
+    }
+  }
 
   const row = await model.create(data);
   await CreateAuditLogService({
@@ -362,6 +393,22 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   }
 
   const data = normalizeBody(resource, req.body);
+  if (resource === "uraFlows") {
+    applyMediaUpload(data, req, { url: "welcomeMediaUrl", type: "welcomeMediaType", name: "welcomeMediaName" });
+    if (!req.file) {
+      delete data.welcomeMediaUrl;
+      delete data.welcomeMediaType;
+      delete data.welcomeMediaName;
+    }
+  }
+  if (resource === "uraOptions") {
+    applyMediaUpload(data, req, { url: "responseMediaUrl", type: "responseMediaType", name: "responseMediaName" });
+    if (!req.file) {
+      delete data.responseMediaUrl;
+      delete data.responseMediaType;
+      delete data.responseMediaName;
+    }
+  }
   const beforeData = row.toJSON();
   await row.update(data);
   await CreateAuditLogService({

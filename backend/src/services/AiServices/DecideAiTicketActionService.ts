@@ -147,6 +147,24 @@ const cleanKnowledgeFragment = (value = ""): string =>
     .replace(/\s+([,.!?;:])/g, "$1")
     .trim();
 
+const cleanCustomerAiAnswer = (value = ""): string => {
+  let answer = value
+    .replace(/\r\n/g, "\n")
+    .replace(/^\u200e+/, "")
+    .trim();
+
+  const forbiddenBlockPattern = /^(?:#+\s*)?(?:base\s+de\s+conhecimento|conhecimento\s+encontrado|manual|artigo\s+encontrado|documento\s+interno)\s*:?\s*[\s\S]*?(?:-{3,}|={3,}|\n\s*\n(?=(?:entendi|certo|ol[aá]|nesse|para|a orienta[cç][aã]o|pelo que|conforme)\b))/i;
+  answer = answer.replace(forbiddenBlockPattern, "").trim();
+
+  answer = answer
+    .replace(/^\s*(?:de acordo com|conforme|segundo)\s+a\s+(?:base\s+de\s+conhecimento|base|manual|documento\s+interno)\s*:?\s*/i, "")
+    .replace(/\b(?:base\s+de\s+conhecimento|RAG|prompt|documento\s+interno|artigo\s+encontrado)\b\s*:?\s*/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return answer;
+};
+
 const buildKnowledgeFallbackDecision = (
   message: string,
   articles: KnowledgeFragment[],
@@ -270,6 +288,8 @@ const buildAnswerPrompt = ({
   "Nao invente valores, prazos, links, telefones, regras, procedimentos ou nomes que nao estejam na base.",
   "Pode explicar opcoes, sugerir proximos passos, listar possiveis causas, orientar uma triagem inicial, informar promocoes ou conduzir uma venda somente quando isso estiver sustentado pela base.",
   "Nao diga que consultou a base de conhecimento, banco de dados, RAG ou prompt.",
+  "Nao escreva titulos como 'Base de Conhecimento', 'Manual', 'Artigo encontrado' ou 'Documento interno'. Esses blocos sao internos e nunca podem aparecer para o cliente.",
+  "Nao cole o bloco interno da base na resposta. Extraia apenas a orientacao util e responda como atendente.",
   "Nao retorne JSON, markdown tecnico, tags internas ou explicacoes do sistema.",
   "Se a pergunta pedir calculo simples e a base trouxer o numero necessario, calcule o resultado e mostre a conta de forma curta. Exemplo: diaria de R$ 300 por 10 dias = R$ 3.000.",
   "Se a pergunta atual for complemento da resposta anterior, use o historico recente para entender a continuidade. Exemplo: depois de informar diaria, 'e para 10 dias?' pede calculo com a diaria anterior.",
@@ -320,7 +340,7 @@ const generateAnswerFromKnowledge = async ({
       skipKnowledgeSearch: true
     });
 
-    return answer?.trim() || null;
+    return cleanCustomerAiAnswer(answer || "") || null;
   } catch (error) {
     logger.warn(
       {
@@ -394,9 +414,21 @@ const withGeneratedKnowledgeAnswer = async ({
   return decision;
 };
 
-const isExplicitHumanRequest = (message: string, intent?: string): boolean => {
-  const normalized = normalizeText(`${message} ${intent || ""}`);
-  return /atendente|humano|pessoa|transfer|transfere|alguem|nao quero robo|nao quero ia/.test(normalized);
+const isExplicitHumanRequest = (message: string): boolean => {
+  const normalized = normalizeText(message)
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return false;
+
+  return (
+    /\b(quero|preciso|pode|consegue|gostaria|desejo)\s+(falar\s+com\s+)?(um\s+|uma\s+)?(atendente|humano|pessoa|alguem)\b/.test(normalized) ||
+    /\b(falar|fala|conversar|conversa)\s+com\s+(um\s+|uma\s+)?(atendente|humano|pessoa|alguem)\b/.test(normalized) ||
+    /\b(me\s+)?(transfere|transferir|encaminha|encaminhar|passa|passar)(\s+(para|pra|pro|a|ao)?\s*(um\s+|uma\s+)?(atendente|humano|pessoa|alguem)?)?\b/.test(normalized) ||
+    /\b(atendimento|suporte)\s+humano\b/.test(normalized) ||
+    /\b(nao|n)\s+quero\s+(robo|ia|bot)\b/.test(normalized)
+  );
 };
 
 const shouldPreferKnowledgeFallback = (
@@ -405,7 +437,7 @@ const shouldPreferKnowledgeFallback = (
   articles: KnowledgeFragment[]
 ): boolean => {
   if (!articles.length) return false;
-  if (isExplicitHumanRequest(message, decision.intencao)) return false;
+  if (isExplicitHumanRequest(message)) return false;
   if (decision.acao === "encerrar_atendimento" || decision.acao === "nao_responder") return false;
   if (decision.acao === "pedir_confirmacao" && decision.perguntaConfirmacao && decision.opcoes?.length) return false;
 

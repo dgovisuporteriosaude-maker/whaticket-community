@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Field } from "formik";
 import {
+	Button,
 	MenuItem,
 	Paper,
 	Popper,
@@ -14,6 +15,15 @@ export const MESSAGE_TEMPLATE_VARIABLES = [
 	{ value: "{{nome_atendente}}", label: "Nome do atendente" },
 	{ value: "{{nome_ia}}", label: "Nome da IA" },
 	{ value: "{{nome_empresa}}", label: "Nome da empresa" },
+	{ value: "{{empresa_nome}}", label: "Nome fantasia" },
+	{ value: "{{empresa_razao_social}}", label: "Razao social" },
+	{ value: "{{empresa_cnpj}}", label: "CNPJ" },
+	{ value: "{{empresa_endereco}}", label: "Endereco da empresa" },
+	{ value: "{{empresa_telefone}}", label: "Telefone da empresa" },
+	{ value: "{{empresa_email}}", label: "E-mail da empresa" },
+	{ value: "{{empresa_site}}", label: "Site da empresa" },
+	{ value: "{{empresa_pix}}", label: "PIX" },
+	{ value: "{{dados_pagamento}}", label: "Dados de pagamento" },
 	{ value: "{{tipo_atendimento}}", label: "Tipo de atendimento" },
 	{ value: "{{fila}}", label: "Fila" },
 	{ value: "{{fila_humana}}", label: "Fila humana" },
@@ -32,10 +42,14 @@ const MessageTemplateField = ({
 	rows = 4,
 	helperText,
 	error,
+	whatsappToolbar = true,
+	onMediaChange,
+	mediaName,
 	...rest
 }) => {
 	const [anchorEl, setAnchorEl] = useState(null);
 	const [caret, setCaret] = useState(0);
+	const inputRef = useRef(null);
 
 	const shouldOpen = text => {
 		const beforeCursor = text.slice(0, caret || text.length);
@@ -70,12 +84,66 @@ const MessageTemplateField = ({
 		}
 	};
 
+	const setValue = (nextValue, setFieldValue) => {
+		if (formik) {
+			setFieldValue(name, nextValue);
+		} else {
+			onChange({ target: { name, value: nextValue } });
+		}
+	};
+
+	const applyWrap = (beforeToken, afterToken, currentValue, setFieldValue) => {
+		const input = inputRef.current;
+		const text = currentValue || "";
+		const start = input?.selectionStart ?? text.length;
+		const end = input?.selectionEnd ?? text.length;
+		const selected = text.slice(start, end) || "texto";
+		const nextValue = `${text.slice(0, start)}${beforeToken}${selected}${afterToken}${text.slice(end)}`;
+		setValue(nextValue, setFieldValue);
+		setTimeout(() => input?.focus(), 0);
+	};
+
+	const insertText = (insertedText, currentValue, setFieldValue) => {
+		const input = inputRef.current;
+		const text = currentValue || "";
+		const start = input?.selectionStart ?? text.length;
+		const end = input?.selectionEnd ?? text.length;
+		const nextValue = `${text.slice(0, start)}${insertedText}${text.slice(end)}`;
+		setValue(nextValue, setFieldValue);
+		setTimeout(() => input?.focus(), 0);
+	};
+
 	const renderField = ({ field = {}, form = {} } = {}) => {
 		const currentValue = formik ? field.value : value;
 		const setFieldValue = formik ? form.setFieldValue : null;
 
 		return (
 			<>
+				{whatsappToolbar && (
+					<div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+						<button type="button" onClick={() => applyWrap("*", "*", currentValue, setFieldValue)}><strong>B</strong></button>
+						<button type="button" onClick={() => applyWrap("_", "_", currentValue, setFieldValue)}><em>I</em></button>
+						<button type="button" onClick={() => applyWrap("~", "~", currentValue, setFieldValue)}>S</button>
+						<button type="button" onClick={() => insertText("\n", currentValue, setFieldValue)}>Linha</button>
+						{["😊", "✅", "📌", "💙", "⚠️"].map(emoji => (
+							<button key={emoji} type="button" onClick={() => insertText(emoji, currentValue, setFieldValue)}>{emoji}</button>
+						))}
+						{onMediaChange && (
+							<label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+								<input
+									type="file"
+									accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+									style={{ display: "none" }}
+									onChange={event => onMediaChange(event.target.files?.[0] || null)}
+								/>
+								<Button type="button" size="small" variant="outlined" component="span">
+									Escolher arquivo
+								</Button>
+								{mediaName && <Typography variant="caption">{mediaName}</Typography>}
+							</label>
+						)}
+					</div>
+				)}
 				<TextField
 					{...rest}
 					fullWidth
@@ -86,6 +154,7 @@ const MessageTemplateField = ({
 					label={label}
 					name={name}
 					value={currentValue || ""}
+					inputRef={inputRef}
 					error={error}
 					helperText={helperText || "Digite {{ para inserir campos automaticamente na mensagem."}
 					onChange={event => handleTextChange(event, setFieldValue)}

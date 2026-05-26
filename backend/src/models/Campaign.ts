@@ -29,6 +29,15 @@ class Campaign extends Model<Campaign> {
   @Column(DataType.TEXT)
   message: string;
 
+  @Column
+  mediaUrl: string;
+
+  @Column
+  mediaType: string;
+
+  @Column
+  mediaName: string;
+
   @Default("contacts")
   @Column
   audience: string;

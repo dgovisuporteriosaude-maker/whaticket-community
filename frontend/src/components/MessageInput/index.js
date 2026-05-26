@@ -252,8 +252,23 @@ const MessageInput = ({ ticketStatus }) => {
     handleLoadQuickAnswer(e.target.value);
   };
 
-  const handleQuickAnswersClick = value => {
-    setInputMessage(value);
+  const handleQuickAnswersClick = async quickAnswer => {
+    setInputMessage(quickAnswer.message);
+    if (quickAnswer.mediaUrl) {
+      try {
+        const mediaPath = quickAnswer.mediaUrl.startsWith("http")
+          ? quickAnswer.mediaUrl
+          : `http://localhost:8085/public/${quickAnswer.mediaUrl}`;
+        const response = await fetch(mediaPath);
+        const blob = await response.blob();
+        const file = new File([blob], quickAnswer.mediaName || "anexo", {
+          type: quickAnswer.mediaType || blob.type
+        });
+        setMedias([file]);
+      } catch (err) {
+        toastError(err);
+      }
+    }
     setTypeBar(false);
   };
 
@@ -285,7 +300,7 @@ const MessageInput = ({ ticketStatus }) => {
     formData.append("fromMe", true);
     medias.forEach(media => {
       formData.append("medias", media);
-      formData.append("body", media.name);
+      formData.append("body", inputMessage.trim() || media.name);
     });
 
     try {
@@ -296,6 +311,7 @@ const MessageInput = ({ ticketStatus }) => {
 
     setLoading(false);
     setMedias([]);
+    setInputMessage("");
   };
 
   const handleSendMessage = async () => {
@@ -631,7 +647,7 @@ const MessageInput = ({ ticketStatus }) => {
                       key={index}
                     >
                       {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
-                      <a onClick={() => handleQuickAnswersClick(value.message)}>
+                      <a onClick={() => handleQuickAnswersClick(value)}>
                         {`${value.shortcut} - ${value.message}`}
                       </a>
                     </li>

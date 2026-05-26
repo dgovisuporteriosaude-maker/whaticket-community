@@ -14,6 +14,17 @@ const requireAdmin = (req: Request): void => {
   }
 };
 
+const mediaDataFromRequest = (req: Request) => {
+  const file = req.file as Express.Multer.File | undefined;
+  if (!file) return {};
+
+  return {
+    unavailableMediaUrl: file.filename,
+    unavailableMediaType: file.mimetype,
+    unavailableMediaName: file.originalname
+  };
+};
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const queues = await ListQueuesService();
 
@@ -22,9 +33,18 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   requireAdmin(req);
-  const { name, color, useAI, aiSettingId } = req.body;
+  const { name, color, useAI, aiSettingId, businessHoursEnabled, businessHours, unavailableMessage } = req.body;
 
-  const queue = await CreateQueueService({ name, color, useAI, aiSettingId });
+  const queue = await CreateQueueService({
+    name,
+    color,
+    useAI: useAI === true || useAI === "true",
+    aiSettingId,
+    businessHoursEnabled: businessHoursEnabled === true || businessHoursEnabled === "true",
+    businessHours,
+    unavailableMessage,
+    ...mediaDataFromRequest(req)
+  });
   await CreateAuditLogService({
     req,
     action: "create",
@@ -59,7 +79,12 @@ export const update = async (
   const currentQueue = await ShowQueueService(queueId);
   const beforeData = currentQueue.toJSON();
 
-  const queue = await UpdateQueueService(queueId, req.body);
+  const queue = await UpdateQueueService(queueId, {
+    ...req.body,
+    useAI: req.body.useAI === true || req.body.useAI === "true",
+    businessHoursEnabled: req.body.businessHoursEnabled === true || req.body.businessHoursEnabled === "true",
+    ...mediaDataFromRequest(req)
+  });
   await CreateAuditLogService({
     req,
     action: "update",

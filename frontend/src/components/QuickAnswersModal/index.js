@@ -22,6 +22,7 @@ import { i18n } from "../../translate/i18n";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import MessageTemplateField from "../MessageTemplateField";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -78,6 +79,7 @@ const QuickAnswersModal = ({
   };
 
   const [quickAnswer, setQuickAnswer] = useState(initialState);
+  const [mediaFile, setMediaFile] = useState(null);
 
   useEffect(() => {
     return () => {
@@ -111,15 +113,20 @@ const QuickAnswersModal = ({
   const handleClose = () => {
     onClose();
     setQuickAnswer(initialState);
+    setMediaFile(null);
   };
 
   const handleSaveQuickAnswer = async (values) => {
     try {
+      const payload = new FormData();
+      Object.entries(values).forEach(([key, value]) => payload.append(key, value));
+      if (mediaFile) payload.append("media", mediaFile);
+      const config = { headers: { "Content-Type": "multipart/form-data" } };
       if (quickAnswerId) {
-        await api.put(`/quickAnswers/${quickAnswerId}`, values);
+        await api.put(`/quickAnswers/${quickAnswerId}`, payload, config);
         handleClose();
       } else {
-        const { data } = await api.post("/quickAnswers", values);
+        const { data } = await api.post("/quickAnswers", payload, config);
         if (onSave) {
           onSave(data);
         }
@@ -174,18 +181,15 @@ const QuickAnswersModal = ({
                   />
                 </div>
                 <div className={classes.textQuickAnswerContainer}>
-                  <Field
-                    as={TextField}
+                  <MessageTemplateField
+                    formik
                     label={i18n.t("quickAnswersModal.form.message")}
                     name="message"
                     error={touched.message && Boolean(errors.message)}
                     helperText={touched.message && errors.message}
-                    variant="outlined"
-                    margin="dense"
-                    className={classes.textField}
-                    multiline
                     rows={5}
-                    fullWidth
+                    onMediaChange={setMediaFile}
+                    mediaName={mediaFile?.name || values.mediaName}
                   />
                 </div>
                 {user?.profile === "admin" && (

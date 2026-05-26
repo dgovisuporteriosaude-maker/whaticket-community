@@ -9,6 +9,9 @@ interface Request {
   userId: number;
   userProfile: string;
   global?: boolean;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  mediaName?: string | null;
 }
 
 const CreateQuickAnswerService = async ({
@@ -16,7 +19,10 @@ const CreateQuickAnswerService = async ({
   message,
   userId,
   userProfile,
-  global
+  global,
+  mediaUrl,
+  mediaType,
+  mediaName
 }: Request): Promise<QuickAnswer> => {
   const isGlobal = userProfile === "admin" ? global !== false : false;
   const nameExists = await QuickAnswer.findOne({
@@ -33,6 +39,9 @@ const CreateQuickAnswerService = async ({
   const quickAnswer = await QuickAnswer.create({
     shortcut,
     message,
+    mediaUrl,
+    mediaType,
+    mediaName,
     userId,
     global: isGlobal
   });

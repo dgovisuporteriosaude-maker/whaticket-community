@@ -24,6 +24,7 @@ import toastError from "../../errors/toastError";
 import ColorPicker from "../ColorPicker";
 import { IconButton, InputAdornment } from "@material-ui/core";
 import { Colorize } from "@material-ui/icons";
+import MessageTemplateField from "../MessageTemplateField";
 
 const useStyles = makeStyles(theme => ({
 	root: {
@@ -73,10 +74,14 @@ const QueueModal = ({ open, onClose, queueId }) => {
 		color: "",
 		useAI: false,
 		aiSettingId: "",
+		businessHoursEnabled: false,
+		businessHours: "",
+		unavailableMessage: "",
 	};
 
 	const [colorPickerModalOpen, setColorPickerModalOpen] = useState(false);
 	const [queue, setQueue] = useState(initialState);
+	const [mediaFile, setMediaFile] = useState(null);
 	const [aiSettings, setAiSettings] = useState([]);
 
 	useEffect(() => {
@@ -126,10 +131,16 @@ const QueueModal = ({ open, onClose, queueId }) => {
 				...values,
 				aiSettingId: values.useAI && values.aiSettingId ? values.aiSettingId : null,
 			};
+			const payload = new FormData();
+			Object.entries(queueData).forEach(([key, value]) => {
+				if (value !== undefined && value !== null) payload.append(key, value);
+			});
+			if (mediaFile) payload.append("media", mediaFile);
+			const config = { headers: { "Content-Type": "multipart/form-data" } };
 			if (queueId) {
-				await api.put(`/queue/${queueId}`, queueData);
+				await api.put(`/queue/${queueId}`, payload, config);
 			} else {
-				await api.post("/queue", queueData);
+				await api.post("/queue", payload, config);
 			}
 			toast.success("Queue saved successfully");
 			handleClose();
@@ -241,6 +252,40 @@ const QueueModal = ({ open, onClose, queueId }) => {
 										</MenuItem>
 									))}
 								</Field>
+								<FormControlLabel
+									control={
+										<Field
+											as={Switch}
+											color="primary"
+											name="businessHoursEnabled"
+											checked={values.businessHoursEnabled}
+										/>
+									}
+									label="Ativar horario de funcionamento"
+								/>
+								{values.businessHoursEnabled && (
+									<>
+										<Field
+											as={TextField}
+											fullWidth
+											multiline
+											rows={4}
+											label="Horario de funcionamento"
+											name="businessHours"
+											variant="outlined"
+											margin="dense"
+											helperText={'Formato JSON. Ex: [{"days":[1,2,3,4,5],"start":"08:00","end":"18:00"}]. Domingo=0, Segunda=1.'}
+										/>
+										<MessageTemplateField
+											formik
+											label="Mensagem de indisponibilidade"
+											name="unavailableMessage"
+											rows={4}
+											onMediaChange={setMediaFile}
+											mediaName={mediaFile?.name || values.unavailableMediaName}
+										/>
+									</>
+								)}
 							</DialogContent>
 							<DialogActions>
 								<Button

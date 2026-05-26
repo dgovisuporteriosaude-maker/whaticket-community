@@ -19,7 +19,21 @@ interface QuickAnswerData {
   shortcut: string;
   message: string;
   global?: boolean;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  mediaName?: string | null;
 }
+
+const mediaDataFromRequest = (req: Request) => {
+  const file = req.file as Express.Multer.File | undefined;
+  if (!file) return {};
+
+  return {
+    mediaUrl: file.filename,
+    mediaType: file.mimetype,
+    mediaName: file.originalname
+  };
+};
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { searchParam, pageNumber } = req.query as IndexQuery;
@@ -35,7 +49,10 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const newQuickAnswer: QuickAnswerData = req.body;
+  const newQuickAnswer: QuickAnswerData = {
+    ...req.body,
+    ...mediaDataFromRequest(req)
+  };
 
   const QuickAnswerSchema = Yup.object().shape({
     shortcut: Yup.string().required(),
@@ -80,7 +97,10 @@ export const update = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const quickAnswerData: QuickAnswerData = req.body;
+  const quickAnswerData: QuickAnswerData = {
+    ...req.body,
+    ...mediaDataFromRequest(req)
+  };
 
   const schema = Yup.object().shape({
     shortcut: Yup.string(),

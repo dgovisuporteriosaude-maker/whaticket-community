@@ -26,6 +26,8 @@ import CreateContactService from "../services/ContactServices/CreateContactServi
 import CreateGlpiTicketService from "../services/GlpiServices/CreateGlpiTicketService";
 import { tryRegisterSatisfactionResponse } from "../services/SatisfactionSurveyServices/SatisfactionSurveyService";
 import DecideAiTicketActionService from "../services/AiServices/DecideAiTicketActionService";
+import uploadConfig from "../config/upload";
+import RenderMessageVariables from "../helpers/RenderMessageVariables";
 
 import { whatsappProvider } from "../providers/WhatsApp/whatsappProvider";
 import { MessageType, MessageAck } from "../providers/WhatsApp/types";
@@ -310,10 +312,11 @@ const sendTextMessage = async (
   body: string,
   ticket?: Ticket
 ): Promise<void> => {
+  const renderedBody = await RenderMessageVariables(`\u200e${body}`, contactPayload as any);
   const sentMessage = await whatsappProvider.sendMessage(
     whatsappId,
     contactChatId(contactPayload),
-    formatBody(`\u200e${body}`, contactPayload as any)
+    renderedBody
   );
 
   if (ticket) {
@@ -321,14 +324,69 @@ const sendTextMessage = async (
       messageData: {
         id: sentMessage.id,
         ticketId: ticket.id,
-        body: sentMessage.body || body,
+        body: sentMessage.body || renderedBody || body,
         fromMe: true,
         read: true,
         mediaType: sentMessage.type,
         ack: sentMessage.ack !== undefined ? sentMessage.ack : 1
       }
     });
-    await ticket.update({ lastMessage: sentMessage.body || body });
+    await ticket.update({ lastMessage: sentMessage.body || renderedBody || body });
+  }
+};
+
+const sendConfiguredMessage = async ({
+  whatsappId,
+  contactPayload,
+  body,
+  ticket,
+  mediaUrl,
+  mediaType,
+  mediaName
+}: {
+  whatsappId: number;
+  contactPayload: ContactPayload;
+  body?: string | null;
+  ticket?: Ticket;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  mediaName?: string | null;
+}): Promise<void> => {
+  if (!mediaUrl) {
+    if (body) await sendTextMessage(whatsappId, contactPayload, body, ticket);
+    return;
+  }
+
+  const renderedBody = body ? await RenderMessageVariables(`\u200e${body}`, contactPayload as any) : undefined;
+  const caption = renderedBody || undefined;
+  const sentMessage = await whatsappProvider.sendMedia(
+    whatsappId,
+    contactChatId(contactPayload),
+    {
+      filename: mediaName || mediaUrl,
+      mimetype: mediaType || "application/octet-stream",
+      path: join(uploadConfig.directory, mediaUrl)
+    },
+    {
+      caption,
+      sendMediaAsDocument: mediaType ? !mediaType.startsWith("image/") && !mediaType.startsWith("video/") : true
+    }
+  );
+
+  if (ticket) {
+    await CreateMessageService({
+      messageData: {
+        id: sentMessage.id,
+        ticketId: ticket.id,
+        body: sentMessage.body || renderedBody || body || mediaName || mediaUrl,
+        fromMe: true,
+        read: true,
+        mediaType: sentMessage.type || mediaType || "document",
+        mediaUrl,
+        ack: sentMessage.ack !== undefined ? sentMessage.ack : 1
+      }
+    });
+    await ticket.update({ lastMessage: sentMessage.body || renderedBody || body || mediaName || mediaUrl });
   }
 };
 
@@ -357,6 +415,55 @@ const normalizeSimpleText = (value = ""): string =>
     .replace(/[^\w\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+const timeToMinutes = (value = ""): number | null => {
+  const match = String(value).match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+};
+
+const queueIsAvailableNow = (queue: Queue): boolean => {
+  if (!queue.businessHoursEnabled) return true;
+  if (!queue.businessHours) return false;
+
+  try {
+    const rules = JSON.parse(queue.businessHours);
+    const list = Array.isArray(rules) ? rules : [];
+    const now = new Date();
+    const day = now.getDay();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    return list.some(rule => {
+      const days = Array.isArray(rule.days) ? rule.days.map(Number) : [];
+      const start = timeToMinutes(rule.start);
+      const end = timeToMinutes(rule.end);
+      return days.includes(day) && start !== null && end !== null && currentMinutes >= start && currentMinutes <= end;
+    });
+  } catch (error) {
+    return false;
+  }
+};
+
+const sendQueueUnavailableIfNeeded = async (
+  whatsappId: number,
+  contactPayload: ContactPayload,
+  ticket: Ticket,
+  queue: Queue
+): Promise<boolean> => {
+  if (queueIsAvailableNow(queue)) return false;
+
+  await sendConfiguredMessage({
+    whatsappId,
+    contactPayload,
+    ticket,
+    body: queue.unavailableMessage || "No momento esta fila esta fora do horario de atendimento.",
+    mediaUrl: queue.unavailableMediaUrl,
+    mediaType: queue.unavailableMediaType,
+    mediaName: queue.unavailableMediaName
+  });
+
+  return true;
+};
 
 const isSimpleGreeting = (message: string): boolean =>
   /^(oi|ola|olá|bom dia|boa tarde|boa noite|e ai|e aí|opa|hello|hi)$/.test(
@@ -827,7 +934,15 @@ const handleUraLogic = async (
     if (menu) {
       uraMenuLocks.add(ticket.id);
       try {
-        await sendTextMessage(whatsappId, contactPayload, menu, ticket);
+        await sendConfiguredMessage({
+          whatsappId,
+          contactPayload,
+          body: menu,
+          ticket,
+          mediaUrl: flow.welcomeMediaUrl,
+          mediaType: flow.welcomeMediaType,
+          mediaName: flow.welcomeMediaName
+        });
         await ticket.update({
           queueId: null,
           uraFlowId: flow.id,
@@ -842,8 +957,16 @@ const handleUraLogic = async (
     return true;
   }
 
-  if (selectedOption.responseMessage) {
-    await sendTextMessage(whatsappId, contactPayload, selectedOption.responseMessage, ticket);
+  if (selectedOption.responseMessage || selectedOption.responseMediaUrl) {
+    await sendConfiguredMessage({
+      whatsappId,
+      contactPayload,
+      body: selectedOption.responseMessage,
+      ticket,
+      mediaUrl: selectedOption.responseMediaUrl,
+      mediaType: selectedOption.responseMediaType,
+      mediaName: selectedOption.responseMediaName
+    });
   }
 
   if (selectedOption.action === "TRANSFER_QUEUE" && selectedOption.targetQueueId) {
@@ -862,6 +985,9 @@ const handleUraLogic = async (
   if (selectedOption.action === "START_AI") {
     if (selectedOption.targetQueueId) {
       const queue = await Queue.findByPk(selectedOption.targetQueueId);
+      if (queue && await sendQueueUnavailableIfNeeded(whatsappId, contactPayload, ticket, queue)) {
+        return true;
+      }
       const aiSettingId = queue?.aiSettingId || null;
 
       await UpdateTicketService({
@@ -978,6 +1104,9 @@ const handleQueueLogic = async (
 
   if (queues.length === 1) {
     const queue = queues[0];
+    if (await sendQueueUnavailableIfNeeded(whatsappId, contactPayload, ticket, queue)) {
+      return;
+    }
     await UpdateTicketService({
       ticketData: {
         queueId: queue.id,
@@ -1015,6 +1144,9 @@ const handleQueueLogic = async (
   const choosenQueue = queues[+selectedOption - 1];
 
   if (choosenQueue) {
+    if (await sendQueueUnavailableIfNeeded(whatsappId, contactPayload, ticket, choosenQueue)) {
+      return;
+    }
     await UpdateTicketService({
       ticketData: {
         queueId: choosenQueue.id,

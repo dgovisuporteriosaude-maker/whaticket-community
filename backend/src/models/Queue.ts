@@ -11,7 +11,8 @@ import {
   BelongsToMany,
   Default,
   ForeignKey,
-  BelongsTo
+  BelongsTo,
+  DataType
 } from "sequelize-typescript";
 import User from "./User";
 import UserQueue from "./UserQueue";
@@ -39,6 +40,25 @@ class Queue extends Model<Queue> {
 
   @Column
   greetingMessage: string;
+
+  @Default(false)
+  @Column
+  businessHoursEnabled: boolean;
+
+  @Column(DataType.TEXT)
+  businessHours: string;
+
+  @Column(DataType.TEXT)
+  unavailableMessage: string;
+
+  @Column
+  unavailableMediaUrl: string;
+
+  @Column
+  unavailableMediaType: string;
+
+  @Column
+  unavailableMediaName: string;
 
   @Default(false)
   @Column

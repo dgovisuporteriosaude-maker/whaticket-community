@@ -10,7 +10,20 @@ const ShowWhatsAppService = async (id: string | number): Promise<Whatsapp> => {
       {
         model: Queue,
         as: "queues",
-        attributes: ["id", "name", "color", "greetingMessage", "useAI", "aiSettingId"]
+        attributes: [
+          "id",
+          "name",
+          "color",
+          "greetingMessage",
+          "useAI",
+          "aiSettingId",
+          "businessHoursEnabled",
+          "businessHours",
+          "unavailableMessage",
+          "unavailableMediaUrl",
+          "unavailableMediaType",
+          "unavailableMediaName"
+        ]
       },
       {
         model: UraFlow,

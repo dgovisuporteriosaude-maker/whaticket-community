@@ -228,7 +228,8 @@ const resources = [
 		fields: [
 			{ name: "name", label: "Nome", required: true },
 			{ name: "description", label: "Descricao", multiline: true },
-			{ name: "welcomeMessage", label: "Mensagem inicial", multiline: true, required: true },
+			{ name: "welcomeMessage", label: "Mensagem inicial", multiline: true, required: true, template: true, media: true },
+			{ name: "welcomeMediaName", label: "Anexo", readOnly: true },
 			{ name: "invalidOptionMessage", label: "Mensagem opcao invalida", multiline: true },
 			{ name: "maxInvalidAttempts", label: "Maximo de tentativas invalidas", type: "number" },
 			{ name: "fallbackQueueId", label: "Fila fallback", type: "relation", relation: "queues", nullable: true },
@@ -244,7 +245,8 @@ const resources = [
 			{ name: "flowId", label: "Fluxo URA", type: "relation", relation: "uraFlows", required: true },
 			{ name: "optionKey", label: "Opcao digitada. Ex: 1", required: true },
 			{ name: "title", label: "Titulo", required: true },
-			{ name: "responseMessage", label: "Mensagem de resposta", multiline: true },
+			{ name: "responseMessage", label: "Mensagem de resposta", multiline: true, template: true, media: true },
+			{ name: "responseMediaName", label: "Anexo", readOnly: true },
 			{
 				name: "action",
 				label: "Acao",
@@ -256,7 +258,7 @@ const resources = [
 					{ value: "HUMAN", label: "Encaminhar para humano" }
 				]
 			},
-			{ name: "targetQueueId", label: "Fila destino", type: "relation", relation: "queues", nullable: true },
+			{ name: "targetQueueId", label: "Fila destino", type: "relation", relation: "queues", nullable: true, showWhen: form => ["TRANSFER_QUEUE", "HUMAN", "START_AI"].includes(form.action) },
 			{
 				name: "aiHumanHandoffEnabled",
 				label: "Permitir que a IA chame atendente",
@@ -505,6 +507,35 @@ const getColumnLabel = (resource, col) => {
 	return field?.label || col;
 };
 
+const shouldShowField = (field, form) => {
+	if (field.readOnly && !form[field.name]) return false;
+	if (typeof field.showWhen === "function") return field.showWhen(form);
+
+	if (["aiHumanHandoffQueueId", "aiHumanHandoffMessage"].includes(field.name)) {
+		return form.action === "START_AI" && !!form.aiHumanHandoffEnabled;
+	}
+
+	if (["aiAutoCloseMinutes", "aiAutoCloseMessage", "aiAutoCloseReasonId", "aiAutoCloseOnlyIfNotHandedOff"].includes(field.name)) {
+		return form.action === "START_AI" && !!form.aiAutoCloseEnabled;
+	}
+
+	if (["aiHandoffAlertTo", "aiHandoffAlertMessage"].includes(field.name)) {
+		return form.action === "START_AI" && !!form.aiHandoffAlertEnabled;
+	}
+
+	return true;
+};
+
+const buildMultipartPayload = (payload, mediaFile) => {
+	const formData = new FormData();
+	Object.entries(payload).forEach(([key, value]) => {
+		if (value === undefined || value === null) return;
+		formData.append(key, Array.isArray(value) ? JSON.stringify(value) : value);
+	});
+	if (mediaFile) formData.append("media", mediaFile);
+	return formData;
+};
+
 const parseTagText = value => {
 	if (Array.isArray(value)) {
 		return value
@@ -719,6 +750,44 @@ const GeneralSettings = ({
 		</Paper>
 
 		<Typography variant="subtitle1" gutterBottom>
+			Dados da empresa
+		</Typography>
+		<Paper className={classes.generalPaper}>
+			<Grid container spacing={2}>
+				{[
+					["companyFantasyName", "Nome fantasia"],
+					["companyLegalName", "Razao social"],
+					["companyCnpj", "CNPJ"],
+					["companyAddress", "Endereco"],
+					["companyPhone", "Telefone"],
+					["companyEmail", "E-mail"],
+					["companyWebsite", "Site"],
+					["companyPix", "PIX"],
+					["companyPaymentInfo", "Dados de pagamento"]
+				].map(([name, label]) => (
+					<Grid item xs={12} sm={name === "companyAddress" || name === "companyPaymentInfo" ? 12 : 6} key={name}>
+						<SettingTextField
+							fullWidth
+							label={label}
+							name={name}
+							getSettingValue={getSettingValue}
+							onChangeSetting={onChangeSetting}
+							margin="dense"
+							variant="outlined"
+							multiline={name === "companyAddress" || name === "companyPaymentInfo"}
+							rows={name === "companyAddress" || name === "companyPaymentInfo" ? 3 : 1}
+						/>
+					</Grid>
+				))}
+				<Grid item xs={12}>
+					<Typography variant="caption" color="textSecondary">
+						Esses dados ficam disponiveis como variaveis: {"{{empresa_nome}}"}, {"{{empresa_cnpj}}"}, {"{{empresa_endereco}}"}, {"{{empresa_pix}}"} e {"{{dados_pagamento}}"}.
+					</Typography>
+				</Grid>
+			</Grid>
+		</Paper>
+
+		<Typography variant="subtitle1" gutterBottom>
 			GLPI
 		</Typography>
 		<Paper className={classes.generalPaper}>
@@ -806,6 +875,7 @@ const ResourcePanel = ({ resource, classes }) => {
 	const [relations, setRelations] = useState({});
 	const [modalOpen, setModalOpen] = useState(false);
 	const [form, setForm] = useState({});
+	const [mediaFile, setMediaFile] = useState(null);
 	const [testingApi, setTestingApi] = useState(false);
 
 	const loadRows = async () => {
@@ -860,6 +930,7 @@ const ResourcePanel = ({ resource, classes }) => {
 			nextForm[field.name] = field.type === "tags" ? "" : defaultValue(field);
 		});
 		setForm(nextForm);
+		setMediaFile(null);
 		setModalOpen(true);
 	};
 
@@ -876,6 +947,7 @@ const ResourcePanel = ({ resource, classes }) => {
 		});
 		nextForm.id = row.id;
 		setForm(nextForm);
+		setMediaFile(null);
 		setModalOpen(true);
 	};
 
@@ -922,10 +994,14 @@ const ResourcePanel = ({ resource, classes }) => {
 					payload[field.name] = formatTagText(payload[field.name]);
 				});
 
+			const hasMedia = !!mediaFile;
+			const requestBody = hasMedia ? buildMultipartPayload(payload, mediaFile) : payload;
+			const requestConfig = hasMedia ? { headers: { "Content-Type": "multipart/form-data" } } : undefined;
+
 			if (form.id) {
-				await api.put(`${resource.endpoint}/${form.id}`, payload);
+				await api.put(`${resource.endpoint}/${form.id}`, requestBody, requestConfig);
 			} else {
-				await api.post(resource.endpoint, payload);
+				await api.post(resource.endpoint, requestBody, requestConfig);
 			}
 
 			toast.success("Registro salvo.");
@@ -1060,7 +1136,7 @@ const ResourcePanel = ({ resource, classes }) => {
 
 				<DialogContent>
 					<Grid container spacing={2}>
-						{resource.fields.map(field => (
+						{resource.fields.filter(field => shouldShowField(field, form)).map(field => (
 							<Grid item xs={12} sm={field.multiline || field.type === "richtext" ? 12 : 6} key={field.name}>
 								{field.type === "boolean" ? (
 									<>
@@ -1145,6 +1221,15 @@ const ResourcePanel = ({ resource, classes }) => {
 										helperText={field.helperText}
 										classes={classes}
 									/>
+								) : field.readOnly ? (
+									<TextField
+										fullWidth
+										margin="dense"
+										variant="outlined"
+										label={field.label}
+										value={mediaFile?.name || form[field.name] || ""}
+										disabled
+									/>
 								) : field.template ? (
 									<>
 										<MessageTemplateField
@@ -1154,6 +1239,8 @@ const ResourcePanel = ({ resource, classes }) => {
 											onChange={event => handleChange(field.name, event.target.value)}
 											rows={field.multiline ? 4 : 1}
 											required={!!field.required}
+											onMediaChange={field.media ? setMediaFile : undefined}
+											mediaName={field.media ? (mediaFile?.name || form[field.name.replace("Message", "MediaName")] || form.welcomeMediaName || form.responseMediaName) : undefined}
 										/>
 										{fieldHelper(field)}
 									</>

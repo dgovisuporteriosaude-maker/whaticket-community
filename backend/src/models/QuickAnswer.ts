@@ -26,6 +26,15 @@ class QuickAnswer extends Model<QuickAnswer> {
   @Column(DataType.TEXT)
   message: string;
 
+  @Column
+  mediaUrl: string;
+
+  @Column
+  mediaType: string;
+
+  @Column
+  mediaName: string;
+
   @Default(true)
   @Column
   global: boolean;

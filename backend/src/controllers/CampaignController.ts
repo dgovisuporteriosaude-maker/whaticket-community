@@ -14,6 +14,34 @@ const include = [
   { model: CampaignContact, as: "recipients", include: [{ model: Contact, as: "contact", attributes: ["id", "name", "number", "isGroup"] }] }
 ];
 
+const parseNumberArray = (value: any): number[] => {
+  if (Array.isArray(value)) return value.map(Number).filter(Number.isFinite);
+  if (value === null || value === undefined || value === "") return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(Number).filter(Number.isFinite);
+  } catch (error) {
+    // falls back to comma separated values
+  }
+
+  return String(value)
+    .split(",")
+    .map(item => Number(item.trim()))
+    .filter(Number.isFinite);
+};
+
+const mediaDataFromRequest = (req: Request) => {
+  const file = req.file as Express.Multer.File | undefined;
+  if (!file) return {};
+
+  return {
+    mediaUrl: file.filename,
+    mediaType: file.mimetype,
+    mediaName: file.originalname
+  };
+};
+
 const resolveCampaignContacts = async ({
   recipientType,
   contactIds = [],
@@ -124,17 +152,22 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     throw new AppError("Escolha o tipo de destinatario da campanha.", 400);
   }
 
-  if ((type === "contacts" || type === "groups") && !contactIds.length) {
+  const selectedContactIds = parseNumberArray(contactIds);
+  const selectedTagIds = parseNumberArray(tagIds);
+  const selectedExcludeTagIds = parseNumberArray(excludeTagIds);
+
+  if ((type === "contacts" || type === "groups") && !selectedContactIds.length) {
     throw new AppError("Selecione pelo menos um destinatario para a campanha.", 400);
   }
 
-  if (type === "tags" && !tagIds.length) {
+  if (type === "tags" && !selectedTagIds.length) {
     throw new AppError("Selecione pelo menos uma etiqueta para a campanha.", 400);
   }
 
   const campaign = await Campaign.create({
     name,
     message,
+    ...mediaDataFromRequest(req),
     audience: type,
     intervalSeconds: Number(parseInt(String(intervalPattern).split(":")[0], 10) || 30),
     intervalPattern: intervalPattern || "30",
@@ -146,9 +179,9 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   const contacts = await resolveCampaignContacts({
     recipientType: type,
-    contactIds: contactIds.map(Number),
-    tagIds: tagIds.map(Number),
-    excludeTagIds: excludeTagIds.map(Number),
+    contactIds: selectedContactIds,
+    tagIds: selectedTagIds,
+    excludeTagIds: selectedExcludeTagIds,
     tagAppliedLastDays
   });
 
