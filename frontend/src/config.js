@@ -1,14 +1,21 @@
 function getConfig(name, defaultValue = null) {
-  // If inside a docker container, use window.ENV
-  if (window.ENV !== undefined) {
-    return window.ENV[name] || defaultValue;
+  const envObject = typeof window !== "undefined" ? window.ENV : undefined;
+
+  if (envObject && envObject[name] !== undefined) {
+    return envObject[name] || defaultValue;
   }
 
   return import.meta.env[name] || defaultValue;
 }
 
 export function getBackendUrl() {
-  return getConfig("VITE_BACKEND_URL");
+  return (
+    getConfig("VITE_BACKEND_URL") ||
+    getConfig("REACT_APP_BACKEND_URL") ||
+    (typeof window !== "undefined"
+      ? `${window.location.protocol}//${window.location.hostname}:8085`
+      : "http://localhost:8085")
+  );
 }
 
 export function getHoursCloseTicketsAuto() {

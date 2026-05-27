@@ -136,7 +136,7 @@ const QueueModal = ({ open, onClose, queueId }) => {
 						}, 400);
 					}}
 				>
-					{({ touched, errors, isSubmitting, values }) => (
+					{({ touched, errors, isSubmitting, values, setFieldValue }) => (
 						<Form>
 							<DialogContent dividers>
 								<Field
@@ -155,13 +155,17 @@ const QueueModal = ({ open, onClose, queueId }) => {
 									label={i18n.t("queueModal.form.color")}
 									name="color"
 									id="color"
+<<<<<<< Updated upstream
 									onFocus={() => {
 										setColorPickerModalOpen(true);
 										greetingRef.current.focus();
 									}}
+=======
+>>>>>>> Stashed changes
 									error={touched.color && Boolean(errors.color)}
 									helperText={touched.color && errors.color}
 									InputProps={{
+										inputProps: { readOnly: true },
 										startAdornment: (
 											<InputAdornment position="start">
 												<div
@@ -185,13 +189,9 @@ const QueueModal = ({ open, onClose, queueId }) => {
 								/>
 								<ColorPicker
 									open={colorPickerModalOpen}
-									handleClose={() => setColorPickerModalOpen(false)}
-									onChange={color => {
-										values.color = color;
-										setQueue(() => {
-											return { ...values, color };
-										});
-									}}
+										currentColor={values.color}
+										handleClose={() => setColorPickerModalOpen(false)}
+										onChange={color => setFieldValue("color", color)}
 								/>
 								<div>
 									<Field

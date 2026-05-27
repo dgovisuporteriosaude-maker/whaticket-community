@@ -1,10 +1,10 @@
-import { Dialog } from "@material-ui/core";
-import React, { useState } from "react";
+import { Button, Dialog, DialogActions, DialogContent } from "@material-ui/core";
+import React, { useEffect, useState } from "react";
 
 import { GithubPicker } from "react-color";
 
 const ColorPicker = ({ onChange, currentColor, handleClose, open }) => {
-  const [selectedColor, setSelectedColor] = useState(currentColor);
+  const [selectedColor, setSelectedColor] = useState(currentColor || "#000000");
   const colors = [
     "#B80000",
     "#DB3E00",
@@ -59,8 +59,18 @@ const ColorPicker = ({ onChange, currentColor, handleClose, open }) => {
     "#AB149E",
   ];
 
+  useEffect(() => {
+    if (currentColor) {
+      setSelectedColor(currentColor);
+    }
+  }, [currentColor]);
+
   const handleChange = (color) => {
     setSelectedColor(color.hex);
+  };
+
+  const handleChangeComplete = (color) => {
+    onChange(color.hex);
     handleClose();
   };
 
@@ -72,14 +82,21 @@ const ColorPicker = ({ onChange, currentColor, handleClose, open }) => {
       maxWidth="xs"
       paperFullWidth
     >
-      <GithubPicker
-        width={"100%"}
-        triangle="hide"
-        color={selectedColor}
-        colors={colors}
-        onChange={handleChange}
-        onChangeComplete={(color) => onChange(color.hex)}
-      />
+      <DialogContent dividers style={{ padding: 8 }}>
+        <GithubPicker
+          width={"100%"}
+          triangle="hide"
+          color={selectedColor}
+          colors={colors}
+          onChange={handleChange}
+          onChangeComplete={handleChangeComplete}
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleClose} color="primary">
+          Fechar
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 };
