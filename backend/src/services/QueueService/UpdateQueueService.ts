@@ -10,6 +10,7 @@ interface QueueData {
   useAI?: boolean;
   aiSettingId?: number | null;
   businessHoursEnabled?: boolean;
+  businessHoursMode?: string | null;
   businessHours?: string | null;
   unavailableMessage?: string | null;
   unavailableMediaUrl?: string | null;
@@ -78,7 +79,15 @@ const UpdateQueueService = async (
     throw new AppError("Escolha a configuracao de IA ou desative o uso de IA nesta fila.", 400);
   }
 
-  if (queueData.businessHoursEnabled) {
+  const businessHoursMode = queueData.businessHoursMode || (queueData.businessHoursEnabled ? "custom" : "always");
+  if (!["always", "company", "custom"].includes(businessHoursMode)) {
+    throw new AppError("Escolha uma opcao valida de horario de funcionamento.", 400);
+  }
+
+  queueData.businessHoursMode = businessHoursMode;
+  queueData.businessHoursEnabled = businessHoursMode !== "always";
+
+  if (businessHoursMode === "custom") {
     if (!queueData.businessHours || !String(queueData.businessHours).trim()) {
       throw new AppError("Informe o horario de funcionamento da fila.", 400);
     }

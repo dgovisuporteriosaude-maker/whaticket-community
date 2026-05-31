@@ -23,5 +23,6 @@ routes.post("/scheduled-messages", isAuth, upload.single("media"), ScheduledMess
 routes.put("/scheduled-messages/:scheduleId", isAuth, upload.single("media"), ScheduledMessageController.update);
 routes.delete("/scheduled-messages/:scheduleId", isAuth, ScheduledMessageController.remove);
 routes.get("/scheduled-messages/:scheduleId/executions", isAuth, ScheduledMessageController.executions);
+routes.post("/scheduled-messages/:scheduleId/duplicate", isAuth, ScheduledMessageController.duplicate);
 
 export default routes;

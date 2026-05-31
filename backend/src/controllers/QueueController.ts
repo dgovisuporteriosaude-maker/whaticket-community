@@ -33,7 +33,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   requireAdmin(req);
-  const { name, color, useAI, aiSettingId, businessHoursEnabled, businessHours, unavailableMessage } = req.body;
+  const { name, color, useAI, aiSettingId, businessHoursEnabled, businessHoursMode, businessHours, unavailableMessage } = req.body;
 
   const queue = await CreateQueueService({
     name,
@@ -41,6 +41,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     useAI: useAI === true || useAI === "true",
     aiSettingId,
     businessHoursEnabled: businessHoursEnabled === true || businessHoursEnabled === "true",
+    businessHoursMode: businessHoursMode || (businessHoursEnabled === true || businessHoursEnabled === "true" ? "custom" : "always"),
     businessHours,
     unavailableMessage,
     ...mediaDataFromRequest(req)
@@ -83,6 +84,7 @@ export const update = async (
     ...req.body,
     useAI: req.body.useAI === true || req.body.useAI === "true",
     businessHoursEnabled: req.body.businessHoursEnabled === true || req.body.businessHoursEnabled === "true",
+    businessHoursMode: req.body.businessHoursMode || (req.body.businessHoursEnabled === true || req.body.businessHoursEnabled === "true" ? "custom" : "always"),
     ...mediaDataFromRequest(req)
   });
   await CreateAuditLogService({

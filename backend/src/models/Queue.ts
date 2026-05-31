@@ -45,6 +45,10 @@ class Queue extends Model<Queue> {
   @Column
   businessHoursEnabled: boolean;
 
+  @Default("always")
+  @Column
+  businessHoursMode: string;
+
   @Column(DataType.TEXT)
   businessHours: string;
 

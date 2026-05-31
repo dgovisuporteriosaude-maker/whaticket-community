@@ -17,6 +17,7 @@ import AccountTreeOutlinedIcon from "@material-ui/icons/AccountTreeOutlined";
 import QuestionAnswerOutlinedIcon from "@material-ui/icons/QuestionAnswerOutlined";
 import EventNoteOutlinedIcon from "@material-ui/icons/EventNoteOutlined";
 import SecurityOutlinedIcon from "@material-ui/icons/SecurityOutlined";
+import ExtensionIcon from "@material-ui/icons/Extension";
 import ExpandLess from "@material-ui/icons/ExpandLess";
 import ExpandMore from "@material-ui/icons/ExpandMore";
 
@@ -227,7 +228,7 @@ const MainListItems = (props) => {
       />
       <ListItemLink
         to="/campaigns-schedules"
-        primary="Agendamentos e campanhas"
+        primary="Campanhas e Agendamentos"
         icon={<EventNoteOutlinedIcon />}
         className={classes.item}
         activeClassName={classes.activeItem}
@@ -296,6 +297,15 @@ const MainListItems = (props) => {
                 to="/settings"
                 primary={i18n.t("mainDrawer.listItems.settings")}
                 icon={<SettingsOutlinedIcon />}
+                className={classes.item}
+                activeClassName={classes.activeItem}
+                collapsed={!drawerOpen}
+                collapsedClassName={classes.itemCollapsed}
+              />
+              <ListItemLink
+                to="/integrations"
+                primary="Integrações"
+                icon={<ExtensionIcon />}
                 className={classes.item}
                 activeClassName={classes.activeItem}
                 collapsed={!drawerOpen}

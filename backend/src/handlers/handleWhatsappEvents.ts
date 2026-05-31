@@ -430,12 +430,10 @@ const timeToMinutes = (value = ""): number | null => {
   return Number(match[1]) * 60 + Number(match[2]);
 };
 
-const queueIsAvailableNow = (queue: Queue): boolean => {
-  if (!queue.businessHoursEnabled) return true;
-  if (!queue.businessHours) return false;
-
+const rulesAreAvailableNow = (businessHours: string | null | undefined): boolean => {
+  if (!businessHours) return false;
   try {
-    const rules = JSON.parse(queue.businessHours);
+    const rules = JSON.parse(businessHours);
     const list = Array.isArray(rules) ? rules : [];
     const now = new Date();
     const day = now.getDay();
@@ -452,19 +450,40 @@ const queueIsAvailableNow = (queue: Queue): boolean => {
   }
 };
 
+const getSettingValue = async (key: string): Promise<string> => {
+  const setting = await Setting.findOne({ where: { key } });
+  return setting?.value || "";
+};
+
+const queueIsAvailableNow = async (queue: Queue): Promise<boolean> => {
+  const mode = queue.businessHoursMode || (queue.businessHoursEnabled ? "custom" : "always");
+  if (mode === "always" || !queue.businessHoursEnabled) return true;
+
+  if (mode === "company") {
+    const companyMode = await getSettingValue("companyBusinessHoursMode");
+    if (!companyMode || companyMode === "always") return true;
+    return rulesAreAvailableNow(await getSettingValue("companyBusinessHours"));
+  }
+
+  return rulesAreAvailableNow(queue.businessHours);
+};
+
 const sendQueueUnavailableIfNeeded = async (
   whatsappId: number,
   contactPayload: ContactPayload,
   ticket: Ticket,
   queue: Queue
 ): Promise<boolean> => {
-  if (queueIsAvailableNow(queue)) return false;
+  if (await queueIsAvailableNow(queue)) return false;
+  const companyUnavailableMessage = queue.businessHoursMode === "company"
+    ? await getSettingValue("companyUnavailableMessage")
+    : "";
 
   await sendConfiguredMessage({
     whatsappId,
     contactPayload,
     ticket,
-    body: queue.unavailableMessage || "No momento esta fila esta fora do horario de atendimento.",
+    body: queue.unavailableMessage || companyUnavailableMessage || "No momento esta fila esta fora do horario de atendimento.",
     mediaUrl: queue.unavailableMediaUrl,
     mediaType: queue.unavailableMediaType,
     mediaName: queue.unavailableMediaName

@@ -56,7 +56,7 @@ const UpdateWhatsAppService = async ({
     throw new AppError(err.message);
   }
 
-  if (queueIds && queueIds.length > 1 && !greetingMessage) {
+  if (queueIds && queueIds.length > 1 && !uraFlowId && !greetingMessage) {
     throw new AppError("ERR_WAPP_GREETING_REQUIRED");
   }
 

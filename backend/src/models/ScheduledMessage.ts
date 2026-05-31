@@ -107,6 +107,26 @@ class ScheduledMessage extends Model<ScheduledMessage> {
   @Column
   canceledAt: Date;
 
+  @Column
+  repeatEvery: number;
+
+  @Column
+  repeatUnit: string;
+
+  @Column
+  maxRuns: number;
+
+  @Default(0)
+  @Column
+  runCount: number;
+
+  @Default(false)
+  @Column
+  respectBusinessHours: boolean;
+
+  @Column
+  missedRunPolicy: string;
+
   @CreatedAt
   createdAt: Date;
 

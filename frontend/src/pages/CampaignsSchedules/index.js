@@ -8,7 +8,10 @@ import {
   DialogTitle,
   Grid,
   Checkbox,
+  FormControlLabel,
+  IconButton,
   InputAdornment,
+  LinearProgress,
   MenuItem,
   Paper,
   Tab,
@@ -20,10 +23,20 @@ import {
   TableRow,
   TextField,
   Typography,
-  Chip
+  Chip,
+  Tooltip
 } from "@material-ui/core";
 import { makeStyles } from "@material-ui/core/styles";
 import SearchIcon from "@material-ui/icons/Search";
+import PlayArrowIcon from "@material-ui/icons/PlayArrow";
+import PauseIcon from "@material-ui/icons/Pause";
+import StopIcon from "@material-ui/icons/Stop";
+import EditIcon from "@material-ui/icons/Edit";
+import FileCopyIcon from "@material-ui/icons/FileCopy";
+import ListAltIcon from "@material-ui/icons/ListAlt";
+import ReplayIcon from "@material-ui/icons/Replay";
+import SendIcon from "@material-ui/icons/Send";
+import ScheduleIcon from "@material-ui/icons/Schedule";
 import { toast } from "react-toastify";
 
 import api from "../../services/api";
@@ -55,6 +68,82 @@ const useStyles = makeStyles(theme => ({
     borderRadius: 8,
     boxShadow: theme.custom?.cardShadow,
     borderColor: theme.palette.divider,
+  },
+  playlist: {
+    display: "flex",
+    flexDirection: "column",
+    gap: theme.spacing(1.25),
+  },
+  automationCard: {
+    padding: theme.spacing(1.5),
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: 8,
+    background: theme.palette.background.paper,
+    boxShadow: theme.custom?.cardShadow || "0 10px 24px rgba(15,23,42,0.06)",
+  },
+  automationHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: theme.spacing(1.5),
+  },
+  automationTitle: {
+    display: "flex",
+    alignItems: "center",
+    gap: theme.spacing(1),
+    minWidth: 0,
+  },
+  automationIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#FFFFFF",
+    background: theme.palette.primary.main,
+    flexShrink: 0,
+  },
+  automationName: {
+    fontWeight: 700,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  automationMeta: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: theme.spacing(0.75),
+    marginTop: theme.spacing(0.5),
+  },
+  automationStats: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(86px, 1fr))",
+    gap: theme.spacing(1),
+    marginTop: theme.spacing(1.5),
+    [theme.breakpoints.down("xs")]: {
+      gridTemplateColumns: "repeat(2, 1fr)",
+    },
+  },
+  statBox: {
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: 8,
+    padding: theme.spacing(1),
+    background: theme.palette.type === "dark" ? "#111A2E" : "#F8FAFC",
+  },
+  statValue: {
+    fontWeight: 700,
+  },
+  progressArea: {
+    marginTop: theme.spacing(1.5),
+  },
+  playerActions: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+    gap: theme.spacing(0.25),
+    flexShrink: 0,
   },
   helper: {
     marginBottom: theme.spacing(2)
@@ -137,11 +226,32 @@ const initialSchedule = {
   times: [],
   startsAt: "",
   endsAt: "",
+  repeatEvery: 1,
+  repeatUnit: "hours",
+  maxRuns: "",
+  respectBusinessHours: false,
+  missedRunPolicy: "skip",
   intervalPattern: "30",
   pauseAfter: 20,
   pauseMinutes: 5,
   whatsappId: ""
 };
+
+const weekdayOptions = [
+  { value: 1, label: "Segunda" },
+  { value: 2, label: "Terca" },
+  { value: 3, label: "Quarta" },
+  { value: 4, label: "Quinta" },
+  { value: 5, label: "Sexta" },
+  { value: 6, label: "Sabado" },
+  { value: 0, label: "Domingo" }
+];
+
+const repeatUnitOptions = [
+  { value: "minutes", label: "minutos" },
+  { value: "hours", label: "horas" },
+  { value: "days", label: "dias" }
+];
 
 const toDateTimeLocalValue = value => {
   if (!value) return "";
@@ -284,6 +394,7 @@ const CampaignsSchedules = () => {
   const [scheduleForm, setScheduleForm] = useState(initialSchedule);
   const [campaignMedia, setCampaignMedia] = useState(null);
   const [scheduleMedia, setScheduleMedia] = useState(null);
+  const [scheduleTimeInput, setScheduleTimeInput] = useState("");
   const [editingScheduleId, setEditingScheduleId] = useState(null);
   const [logsModalOpen, setLogsModalOpen] = useState(false);
   const [logsTitle, setLogsTitle] = useState("");
@@ -325,8 +436,51 @@ const CampaignsSchedules = () => {
   };
 
   const handleScheduleChange = event => {
-    const { name, value } = event.target;
+    const { name, value, type, checked } = event.target;
+    if (type === "checkbox") {
+      setScheduleForm(prev => ({ ...prev, [name]: checked }));
+      return;
+    }
     setScheduleForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const toggleScheduleWeekday = day => {
+    setScheduleForm(prev => {
+      const current = prev.weekdays.map(Number);
+      const exists = current.includes(day);
+      return {
+        ...prev,
+        weekdays: exists ? current.filter(item => item !== day) : [...current, day].sort()
+      };
+    });
+  };
+
+  const addScheduleTime = () => {
+    if (!/^\d{2}:\d{2}$/.test(scheduleTimeInput)) {
+      toast.error("Informe um horario valido.");
+      return;
+    }
+
+    setScheduleForm(prev => {
+      const currentTimes = Array.isArray(prev.times) ? prev.times : [];
+      if (currentTimes.includes(scheduleTimeInput)) {
+        toast.info("Este horario ja foi adicionado.");
+        return prev;
+      }
+
+      return {
+        ...prev,
+        times: [...currentTimes, scheduleTimeInput].sort()
+      };
+    });
+    setScheduleTimeInput("");
+  };
+
+  const removeScheduleTime = time => {
+    setScheduleForm(prev => ({
+      ...prev,
+      times: (prev.times || []).filter(item => item !== time)
+    }));
   };
 
   const handleCampaignAudienceChange = event => {
@@ -483,6 +637,36 @@ const CampaignsSchedules = () => {
     error: "Erro"
   }[status] || status);
 
+  const getStatusColor = status => ({
+    draft: "default",
+    scheduled: "primary",
+    running: "primary",
+    paused: "secondary",
+    completed: "primary",
+    completed_with_errors: "secondary",
+    sent: "primary",
+    failed: "secondary",
+    error: "secondary",
+    canceled: "default",
+    finished: "primary"
+  }[status] || "default");
+
+  const formatDateTime = value => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString();
+  };
+
+  const getScheduleRecurrenceLabel = schedule => {
+    if (schedule.recurrenceType === "weekly") return "Dias e horarios";
+    if (schedule.recurrenceType === "interval") {
+      const unitLabel = repeatUnitOptions.find(item => item.value === schedule.repeatUnit)?.label || "horas";
+      return `A cada ${schedule.repeatEvery || 1} ${unitLabel}`;
+    }
+    return "Unico";
+  };
+
   const getCampaignProgress = campaign => {
     const recipients = campaign.recipients || [];
     const sent = recipients.filter(item => item.status === "sent").length;
@@ -491,10 +675,85 @@ const CampaignsSchedules = () => {
     return { sent, failed, pending, total: recipients.length };
   };
 
+  const getScheduleProgress = schedule => {
+    const completed = ["sent", "completed"].includes(schedule.status) ? 1 : 0;
+    const failed = ["failed", "error"].includes(schedule.status) ? 1 : 0;
+    const pending = completed || failed || schedule.status === "canceled" ? 0 : 1;
+    return { sent: completed, failed, pending, total: 1 };
+  };
+
+  const getProgressPercent = progress => {
+    if (!progress.total) return 0;
+    return Math.min(100, Math.round((progress.sent / progress.total) * 100));
+  };
+
+  const buildAutomationItems = () => {
+    const campaignItems = campaigns.map(campaign => {
+      const progress = getCampaignProgress(campaign);
+      return {
+        id: `campaign-${campaign.id}`,
+        source: "campaign",
+        raw: campaign,
+        name: campaign.name || `Campanha #${campaign.id}`,
+        typeLabel: "Campanha",
+        recurrenceLabel: "Envio em fila",
+        status: campaign.status,
+        statusLabel: getCampaignStatusLabel(campaign.status),
+        nextRunAt: campaign.status === "scheduled" ? campaign.createdAt : null,
+        lastRunAt: campaign.completedAt || campaign.startedAt || campaign.updatedAt,
+        whatsappName: campaign.whatsapp?.name || "Padrao",
+        message: campaign.message,
+        progress
+      };
+    });
+
+    const scheduleItems = schedules.map(schedule => {
+      const progress = getScheduleProgress(schedule);
+      return {
+        id: `schedule-${schedule.id}`,
+        source: "schedule",
+        raw: schedule,
+        name: schedule.contact?.name || schedule.message?.slice(0, 42) || `Agendamento #${schedule.id}`,
+        typeLabel: "Agendamento",
+        recurrenceLabel: getScheduleRecurrenceLabel(schedule),
+        status: schedule.status,
+        statusLabel: getScheduleStatusLabel(schedule.status),
+        nextRunAt: schedule.nextRunAt || schedule.scheduledAt,
+        lastRunAt: schedule.lastRunAt || schedule.updatedAt,
+        whatsappName: schedule.whatsapp?.name || "Padrao",
+        message: schedule.message,
+        progress
+      };
+    });
+
+    const allItems = [...campaignItems, ...scheduleItems].sort((a, b) => {
+      const aDate = new Date(a.nextRunAt || a.lastRunAt || 0).getTime();
+      const bDate = new Date(b.nextRunAt || b.lastRunAt || 0).getTime();
+      return bDate - aDate;
+    });
+
+    if (tab === 1) return allItems.filter(item => item.source === "campaign");
+    if (tab === 2) return allItems.filter(item => item.source === "schedule");
+    if (tab === 3) return allItems.filter(item => ["running", "paused", "scheduled"].includes(item.status));
+    if (tab === 4) return allItems.filter(item => ["failed", "error", "completed_with_errors"].includes(item.status) || item.progress.failed > 0);
+    return allItems;
+  };
+
+  const renderIconAction = ({ title, icon, onClick, disabled = false, color = "default" }) => (
+    <Tooltip title={title}>
+      <span>
+        <IconButton size="small" onClick={onClick} disabled={disabled} color={color}>
+          {icon}
+        </IconButton>
+      </span>
+    </Tooltip>
+  );
+
   const openNewScheduleModal = () => {
     setEditingScheduleId(null);
     setScheduleForm(initialSchedule);
     setScheduleMedia(null);
+    setScheduleTimeInput("");
     setScheduleModalOpen(true);
   };
 
@@ -511,12 +770,18 @@ const CampaignsSchedules = () => {
       times: schedule.times || [],
       startsAt: toDateTimeLocalValue(schedule.startsAt),
       endsAt: toDateTimeLocalValue(schedule.endsAt),
+      repeatEvery: schedule.repeatEvery || 1,
+      repeatUnit: schedule.repeatUnit || "hours",
+      maxRuns: schedule.maxRuns || "",
+      respectBusinessHours: !!schedule.respectBusinessHours,
+      missedRunPolicy: schedule.missedRunPolicy || "skip",
       intervalPattern: schedule.intervalPattern || String(schedule.intervalSeconds || 30),
       pauseAfter: schedule.pauseAfter || 20,
       pauseMinutes: Math.max(1, Math.round((schedule.pauseSeconds || 300) / 60)),
       whatsappId: schedule.whatsappId || ""
     });
     setScheduleMedia(null);
+    setScheduleTimeInput("");
     setScheduleModalOpen(true);
   };
 
@@ -525,6 +790,7 @@ const CampaignsSchedules = () => {
     setEditingScheduleId(null);
     setScheduleForm(initialSchedule);
     setScheduleMedia(null);
+    setScheduleTimeInput("");
   };
 
   const saveSchedule = async () => {
@@ -568,6 +834,16 @@ const CampaignsSchedules = () => {
     }
   };
 
+  const duplicateSchedule = async schedule => {
+    try {
+      await api.post(`/scheduled-messages/${schedule.id}/duplicate`);
+      toast.success("Agendamento clonado. Revise antes de ativar.");
+      loadData();
+    } catch (err) {
+      toastError(err);
+    }
+  };
+
   const renderCampaignActions = campaign => {
     const progress = getCampaignProgress(campaign);
 
@@ -605,8 +881,114 @@ const CampaignsSchedules = () => {
     );
   };
 
+  const renderAutomationActions = item => {
+    if (item.source === "campaign") {
+      const campaign = item.raw;
+      return (
+        <div className={classes.playerActions}>
+          {["scheduled", "paused"].includes(campaign.status) && renderIconAction({
+            title: campaign.status === "paused" ? "Retomar campanha" : "Iniciar agora",
+            icon: <PlayArrowIcon />,
+            color: "primary",
+            onClick: () => updateCampaignStatus(campaign, "running")
+          })}
+          {campaign.status === "running" && renderIconAction({
+            title: "Pausar campanha",
+            icon: <PauseIcon />,
+            onClick: () => updateCampaignStatus(campaign, "paused")
+          })}
+          {["scheduled", "running", "paused"].includes(campaign.status) && renderIconAction({
+            title: "Cancelar campanha",
+            icon: <StopIcon />,
+            onClick: () => updateCampaignStatus(campaign, "canceled")
+          })}
+          {item.progress.failed > 0 && renderIconAction({
+            title: "Reenviar erros",
+            icon: <ReplayIcon />,
+            color: "secondary",
+            onClick: () => retryCampaignErrors(campaign)
+          })}
+          {renderIconAction({
+            title: "Clonar campanha",
+            icon: <FileCopyIcon />,
+            onClick: () => duplicateCampaign(campaign)
+          })}
+          {renderIconAction({
+            title: "Logs",
+            icon: <ListAltIcon />,
+            onClick: () => openCampaignLogs(campaign)
+          })}
+        </div>
+      );
+    }
+
+    const schedule = item.raw;
+    return (
+      <div className={classes.playerActions}>
+        {schedule.status === "paused" && renderIconAction({
+          title: "Retomar agendamento",
+          icon: <PlayArrowIcon />,
+          color: "primary",
+          onClick: () => updateScheduleStatus(schedule, "scheduled")
+        })}
+        {["scheduled", "running"].includes(schedule.status) && renderIconAction({
+          title: "Pausar agendamento",
+          icon: <PauseIcon />,
+          onClick: () => updateScheduleStatus(schedule, "paused")
+        })}
+        {["scheduled", "running", "paused"].includes(schedule.status) && renderIconAction({
+          title: "Cancelar agendamento",
+          icon: <StopIcon />,
+          onClick: () => updateScheduleStatus(schedule, "canceled")
+        })}
+        {!["sent", "completed", "canceled"].includes(schedule.status) && renderIconAction({
+          title: "Editar agendamento",
+          icon: <EditIcon />,
+          onClick: () => openEditScheduleModal(schedule)
+        })}
+        {renderIconAction({
+          title: "Clonar agendamento",
+          icon: <FileCopyIcon />,
+          onClick: () => duplicateSchedule(schedule)
+        })}
+        {renderIconAction({
+          title: "Logs",
+          icon: <ListAltIcon />,
+          onClick: () => openScheduleLogs(schedule)
+        })}
+      </div>
+    );
+  };
+
+  const automationItems = buildAutomationItems();
+
   return (
     <Container maxWidth={false} className={classes.root}>
+      <div className={classes.header}>
+        <div>
+          <Typography variant="h6">Campanhas e Agendamentos</Typography>
+          <Typography variant="body2" className={classes.helper}>
+            Centralize envios imediatos, campanhas em fila e mensagens recorrentes em uma unica area.
+          </Typography>
+        </div>
+        <div>
+          <Button
+            color="primary"
+            variant="outlined"
+            onClick={() => setCampaignModalOpen(true)}
+            style={{ marginRight: 8 }}
+          >
+            Nova campanha
+          </Button>
+          <Button
+            color="primary"
+            variant="contained"
+            onClick={openNewScheduleModal}
+          >
+            Novo agendamento
+          </Button>
+        </div>
+      </div>
       <Tabs
         value={tab}
         indicatorColor="primary"
@@ -614,123 +996,74 @@ const CampaignsSchedules = () => {
         onChange={(event, value) => setTab(value)}
         className={classes.tabs}
       >
+        <Tab label="Todos" />
         <Tab label="Campanhas" />
         <Tab label="Agendamentos" />
+        <Tab label="Em andamento" />
+        <Tab label="Com erros" />
       </Tabs>
 
-      {tab === 0 && (
-        <>
-          <div className={classes.header}>
-            <div>
-              <Typography variant="h6">Campanhas</Typography>
-              <Typography variant="body2" className={classes.helper}>
-                Use {"{{nome}}"} para personalizar a mensagem com o nome do contato.
-              </Typography>
-            </div>
-            <Button
-              color="primary"
-              variant="contained"
-              onClick={() => setCampaignModalOpen(true)}
-            >
-              Nova campanha
-            </Button>
-          </div>
-          <Paper className={classes.paper} variant="outlined">
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Nome</TableCell>
-                  <TableCell>Publico</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Destinatarios</TableCell>
-                  <TableCell>Progresso</TableCell>
-                  <TableCell>Intervalo</TableCell>
-                  <TableCell align="right">Acoes</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {campaigns.map(campaign => {
-                  const progress = getCampaignProgress(campaign);
-                  return (
-                    <TableRow key={campaign.id}>
-                      <TableCell>{campaign.name}</TableCell>
-                      <TableCell>{campaign.audience}</TableCell>
-                      <TableCell><Chip size="small" label={getCampaignStatusLabel(campaign.status)} /></TableCell>
-                      <TableCell>{progress.total}</TableCell>
-                      <TableCell>{progress.sent} enviados / {progress.failed} erros / {progress.pending} pendentes</TableCell>
-                      <TableCell>{campaign.intervalPattern || `${campaign.intervalSeconds}s`}</TableCell>
-                      <TableCell align="right">{renderCampaignActions(campaign)}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </Paper>
-        </>
-      )}
+      <Paper className={classes.paper} variant="outlined">
+        <div className={classes.playlist}>
+          {automationItems.map(item => {
+            const percent = getProgressPercent(item.progress);
+            const isCampaign = item.source === "campaign";
 
-      {tab === 1 && (
-        <>
-          <div className={classes.header}>
-            <Typography variant="h6">Agendamentos</Typography>
-            <Button
-              color="primary"
-              variant="contained"
-              onClick={openNewScheduleModal}
-            >
-              Novo agendamento
-            </Button>
-          </div>
-          <Paper className={classes.paper} variant="outlined">
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Contato/grupo</TableCell>
-                  <TableCell>Data</TableCell>
-                  <TableCell>Recorrencia</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Mensagem</TableCell>
-                  <TableCell align="right">Acoes</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {schedules.map(schedule => (
-                  <TableRow key={schedule.id}>
-                    <TableCell>{schedule.contact?.name}</TableCell>
-                    <TableCell>{new Date(schedule.nextRunAt || schedule.scheduledAt).toLocaleString()}</TableCell>
-                    <TableCell>{schedule.recurrenceType === "weekly" ? "Recorrente" : "Unico"}</TableCell>
-                    <TableCell><Chip size="small" label={getScheduleStatusLabel(schedule.status)} /></TableCell>
-                    <TableCell>{schedule.message}</TableCell>
-                    <TableCell align="right">
-                      {!["sent", "completed", "canceled"].includes(schedule.status) && (
-                        <Button size="small" onClick={() => openEditScheduleModal(schedule)}>
-                          Editar
-                        </Button>
-                      )}
-                      {(schedule.status === "scheduled" || schedule.status === "running") && (
-                        <Button size="small" onClick={() => updateScheduleStatus(schedule, "paused")}>
-                          Stop
-                        </Button>
-                      )}
-                      {schedule.status === "paused" && (
-                        <Button size="small" onClick={() => updateScheduleStatus(schedule, "scheduled")}>
-                          Play
-                        </Button>
-                      )}
-                      <Button size="small" onClick={() => openScheduleLogs(schedule)}>
-                        Logs
-                      </Button>
-                      <Button size="small" onClick={() => deleteSchedule(schedule)}>
-                        Excluir
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Paper>
-        </>
-      )}
+            return (
+              <div className={classes.automationCard} key={item.id}>
+                <div className={classes.automationHeader}>
+                  <div className={classes.automationTitle}>
+                    <div className={classes.automationIcon}>
+                      {isCampaign ? <SendIcon /> : <ScheduleIcon />}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <Typography className={classes.automationName}>{item.name}</Typography>
+                      <div className={classes.automationMeta}>
+                        <Chip size="small" label={item.typeLabel} />
+                        <Chip size="small" color={getStatusColor(item.status)} label={item.statusLabel} />
+                        <Chip size="small" label={item.recurrenceLabel} />
+                        <Chip size="small" label={`WhatsApp: ${item.whatsappName}`} />
+                      </div>
+                    </div>
+                  </div>
+                  {renderAutomationActions(item)}
+                </div>
+
+                <div className={classes.automationStats}>
+                  <div className={classes.statBox}>
+                    <Typography variant="caption" color="textSecondary">Proxima execucao</Typography>
+                    <Typography variant="body2" className={classes.statValue}>{formatDateTime(item.nextRunAt)}</Typography>
+                  </div>
+                  <div className={classes.statBox}>
+                    <Typography variant="caption" color="textSecondary">Ultima execucao</Typography>
+                    <Typography variant="body2" className={classes.statValue}>{formatDateTime(item.lastRunAt)}</Typography>
+                  </div>
+                  <div className={classes.statBox}>
+                    <Typography variant="caption" color="textSecondary">Enviados</Typography>
+                    <Typography variant="body2" className={classes.statValue}>{item.progress.sent} / {item.progress.total}</Typography>
+                  </div>
+                  <div className={classes.statBox}>
+                    <Typography variant="caption" color="textSecondary">Pendentes / erros</Typography>
+                    <Typography variant="body2" className={classes.statValue}>{item.progress.pending} pend. / {item.progress.failed} erro(s)</Typography>
+                  </div>
+                </div>
+
+                <div className={classes.progressArea}>
+                  <LinearProgress variant="determinate" value={percent} />
+                  <Typography variant="caption" color="textSecondary">
+                    {percent}% concluido
+                  </Typography>
+                </div>
+              </div>
+            );
+          })}
+          {!automationItems.length && (
+            <Typography variant="body2" color="textSecondary">
+              Nenhuma campanha ou agendamento encontrado para este filtro.
+            </Typography>
+          )}
+        </div>
+      </Paper>
 
       <Dialog open={campaignModalOpen} onClose={() => setCampaignModalOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>Nova campanha</DialogTitle>
@@ -899,8 +1232,9 @@ const CampaignsSchedules = () => {
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField select fullWidth margin="dense" variant="outlined" label="Tipo de agendamento" name="recurrenceType" value={scheduleForm.recurrenceType} onChange={handleScheduleChange}>
-                <MenuItem value="once">Data unica</MenuItem>
-                <MenuItem value="weekly">Recorrente semanal</MenuItem>
+                <MenuItem value="once">Executar uma vez</MenuItem>
+                <MenuItem value="weekly">Dias e horarios especificos</MenuItem>
+                <MenuItem value="interval">Repetir por intervalo</MenuItem>
               </TextField>
             </Grid>
             {scheduleForm.recurrenceType === "once" && (
@@ -910,32 +1244,80 @@ const CampaignsSchedules = () => {
             )}
             {scheduleForm.recurrenceType === "weekly" && (
               <>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    select
-                    fullWidth
-                    margin="dense"
-                    variant="outlined"
-                    label="Dias da semana"
-                    name="weekdays"
-                    value={scheduleForm.weekdays}
-                    onChange={handleScheduleChange}
-                    SelectProps={{ multiple: true }}
-                  >
-                    <MenuItem value={1}>Segunda</MenuItem>
-                    <MenuItem value={2}>Terca</MenuItem>
-                    <MenuItem value={3}>Quarta</MenuItem>
-                    <MenuItem value={4}>Quinta</MenuItem>
-                    <MenuItem value={5}>Sexta</MenuItem>
-                    <MenuItem value={6}>Sabado</MenuItem>
-                    <MenuItem value={0}>Domingo</MenuItem>
-                  </TextField>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2">Dias da semana</Typography>
+                  <Grid container spacing={1}>
+                    {weekdayOptions.map(day => (
+                      <Grid item xs={6} sm={3} md={2} key={day.value}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              color="primary"
+                              checked={(scheduleForm.weekdays || []).map(Number).includes(day.value)}
+                              onChange={() => toggleScheduleWeekday(day.value)}
+                            />
+                          }
+                          label={day.label}
+                        />
+                      </Grid>
+                    ))}
+                  </Grid>
                 </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField fullWidth margin="dense" variant="outlined" label="Horarios" name="times" value={Array.isArray(scheduleForm.times) ? scheduleForm.times.join(", ") : scheduleForm.times} onChange={event => setScheduleForm(prev => ({ ...prev, times: event.target.value.split(",").map(item => item.trim()).filter(Boolean) }))} placeholder="08:00, 12:00, 18:00" />
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2">Horarios</Typography>
+                  <Grid container spacing={1} alignItems="center">
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        fullWidth
+                        type="time"
+                        margin="dense"
+                        variant="outlined"
+                        label="Horario"
+                        value={scheduleTimeInput}
+                        onChange={event => setScheduleTimeInput(event.target.value)}
+                        InputLabelProps={{ shrink: true }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <Button fullWidth variant="outlined" color="primary" onClick={addScheduleTime}>
+                        Adicionar horario
+                      </Button>
+                    </Grid>
+                  </Grid>
+                  <div className={classes.tagChips} style={{ marginTop: 8 }}>
+                    {(scheduleForm.times || []).map(time => (
+                      <Chip key={time} size="small" label={time} onDelete={() => removeScheduleTime(time)} />
+                    ))}
+                  </div>
+                  <Typography variant="caption" color="textSecondary">
+                    Adicione os horarios um por um. O sistema ordena e evita duplicados.
+                  </Typography>
                 </Grid>
                 <Grid item xs={12} sm={6}>
                   <TextField fullWidth type="datetime-local" margin="dense" variant="outlined" label="Inicio" name="startsAt" value={scheduleForm.startsAt} onChange={handleScheduleChange} InputLabelProps={{ shrink: true }} />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField fullWidth type="datetime-local" margin="dense" variant="outlined" label="Fim opcional" name="endsAt" value={scheduleForm.endsAt} onChange={handleScheduleChange} InputLabelProps={{ shrink: true }} />
+                </Grid>
+              </>
+            )}
+            {scheduleForm.recurrenceType === "interval" && (
+              <>
+                <Grid item xs={12} sm={3}>
+                  <TextField fullWidth required type="number" margin="dense" variant="outlined" label="Repetir a cada" name="repeatEvery" value={scheduleForm.repeatEvery} onChange={handleScheduleChange} inputProps={{ min: 1 }} />
+                </Grid>
+                <Grid item xs={12} sm={3}>
+                  <TextField select fullWidth margin="dense" variant="outlined" label="Unidade" name="repeatUnit" value={scheduleForm.repeatUnit} onChange={handleScheduleChange}>
+                    {repeatUnitOptions.map(unit => (
+                      <MenuItem key={unit.value} value={unit.value}>{unit.label}</MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} sm={3}>
+                  <TextField fullWidth type="number" margin="dense" variant="outlined" label="Limite de execucoes" name="maxRuns" value={scheduleForm.maxRuns} onChange={handleScheduleChange} inputProps={{ min: 1 }} helperText="Opcional" />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField fullWidth type="datetime-local" margin="dense" variant="outlined" label="Comecar em" name="startsAt" value={scheduleForm.startsAt} onChange={handleScheduleChange} InputLabelProps={{ shrink: true }} helperText="Se vazio, comeca no proximo minuto." />
                 </Grid>
                 <Grid item xs={12} sm={6}>
                   <TextField fullWidth type="datetime-local" margin="dense" variant="outlined" label="Fim opcional" name="endsAt" value={scheduleForm.endsAt} onChange={handleScheduleChange} InputLabelProps={{ shrink: true }} />

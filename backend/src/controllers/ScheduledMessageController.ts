@@ -123,6 +123,20 @@ const calculateFirstRecurringRun = ({
   return candidates.sort((a, b) => a.getTime() - b.getTime())[0] || null;
 };
 
+const calculateFirstIntervalRun = ({
+  startsAt,
+  scheduledAt
+}: {
+  startsAt?: Date | null;
+  scheduledAt?: string | Date;
+}): Date => {
+  if (startsAt && startsAt.getTime() > Date.now()) return startsAt;
+  if (scheduledAt) return parseScheduledAt(scheduledAt);
+  const date = new Date();
+  date.setMinutes(date.getMinutes() + 1);
+  return date;
+};
+
 const validateIntervalPattern = (value: any): void => {
   const pattern = String(value || "").trim();
   if (!pattern) {
@@ -158,13 +172,18 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     times = [],
     startsAt,
     endsAt,
+    repeatEvery,
+    repeatUnit,
+    maxRuns,
+    respectBusinessHours,
+    missedRunPolicy,
     intervalPattern = "30",
     pauseAfter = 20,
     pauseSeconds = 300,
     pauseMinutes
   } = req.body;
 
-  if (!message || (!scheduledAt && recurrenceType !== "weekly")) {
+  if (!message || (!scheduledAt && !["weekly", "interval"].includes(recurrenceType))) {
     throw new AppError("ERR_SCHEDULE_REQUIRED_FIELDS", 400);
   }
 
@@ -177,10 +196,19 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const firstRecurringRun = recurrenceType === "weekly"
     ? calculateFirstRecurringRun({ weekdays: parsedWeekdays, times: parsedTimes, startsAt: parsedStartsAt })
     : null;
-  const parsedScheduledAt = firstRecurringRun || parseScheduledAt(scheduledAt);
+  const firstIntervalRun = recurrenceType === "interval"
+    ? calculateFirstIntervalRun({ startsAt: parsedStartsAt, scheduledAt })
+    : null;
+  const parsedScheduledAt = firstRecurringRun || firstIntervalRun || parseScheduledAt(scheduledAt);
 
   if (recurrenceType === "weekly" && !firstRecurringRun) {
     throw new AppError("Informe dias e horarios futuros para o agendamento recorrente.", 400);
+  }
+  if (recurrenceType === "interval") {
+    const every = Number(repeatEvery || 0);
+    if (!every || every <= 0 || !["minutes", "hours", "days"].includes(repeatUnit || "hours")) {
+      throw new AppError("Informe um intervalo valido em minutos, horas ou dias.", 400);
+    }
   }
 
   const selectedContactIds = [
@@ -248,6 +276,12 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
       times: parsedTimes,
       startsAt: parsedStartsAt,
       endsAt: parsedEndsAt,
+      repeatEvery: repeatEvery ? Number(repeatEvery) : null,
+      repeatUnit: repeatUnit || null,
+      maxRuns: maxRuns ? Number(maxRuns) : null,
+      runCount: 0,
+      respectBusinessHours: respectBusinessHours === true || respectBusinessHours === "true",
+      missedRunPolicy: missedRunPolicy || "skip",
       intervalSeconds: Number(parseInt(String(intervalPattern).split(":")[0], 10) || 30),
       intervalPattern: intervalPattern || "30",
       pauseAfter: Number(pauseAfter || 20),
@@ -282,8 +316,17 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
     pauseAfter,
     pauseSeconds,
     pauseMinutes,
-    status
-    , recurrenceType, weekdays, times, startsAt, endsAt
+    status,
+    recurrenceType,
+    weekdays,
+    times,
+    startsAt,
+    endsAt,
+    repeatEvery,
+    repeatUnit,
+    maxRuns,
+    respectBusinessHours,
+    missedRunPolicy
   } = req.body;
 
   if (message !== undefined) allowedData.message = message;
@@ -310,6 +353,59 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (times !== undefined) allowedData.times = parseStringArray(times);
   if (startsAt !== undefined) allowedData.startsAt = parseDateOptional(startsAt);
   if (endsAt !== undefined) allowedData.endsAt = parseDateOptional(endsAt);
+  if (repeatEvery !== undefined) allowedData.repeatEvery = repeatEvery ? Number(repeatEvery) : null;
+  if (repeatUnit !== undefined) allowedData.repeatUnit = repeatUnit || null;
+  if (maxRuns !== undefined) allowedData.maxRuns = maxRuns ? Number(maxRuns) : null;
+  if (respectBusinessHours !== undefined) {
+    allowedData.respectBusinessHours = respectBusinessHours === true || respectBusinessHours === "true";
+  }
+  if (missedRunPolicy !== undefined) allowedData.missedRunPolicy = missedRunPolicy || "skip";
+
+  const recurrenceFieldsChanged = [
+    "scheduledAt",
+    "recurrenceType",
+    "weekdays",
+    "times",
+    "startsAt",
+    "endsAt",
+    "repeatEvery",
+    "repeatUnit",
+    "maxRuns"
+  ].some(field => allowedData[field] !== undefined);
+
+  if (recurrenceFieldsChanged && status !== "canceled") {
+    const nextRecurrenceType = allowedData.recurrenceType ?? schedule.recurrenceType ?? "once";
+    const nextStartsAt = allowedData.startsAt !== undefined ? allowedData.startsAt : schedule.startsAt;
+    const nextScheduledAt = allowedData.scheduledAt !== undefined ? allowedData.scheduledAt : schedule.scheduledAt;
+
+    if (nextRecurrenceType === "weekly") {
+      const nextRunAt = calculateFirstRecurringRun({
+        weekdays: allowedData.weekdays !== undefined ? allowedData.weekdays : schedule.weekdays || [],
+        times: allowedData.times !== undefined ? allowedData.times : schedule.times || [],
+        startsAt: nextStartsAt || new Date()
+      });
+
+      if (!nextRunAt) throw new AppError("ERR_INVALID_RECURRING_SCHEDULE", 400);
+      allowedData.nextRunAt = nextRunAt;
+      allowedData.scheduledAt = nextRunAt;
+    } else if (nextRecurrenceType === "interval") {
+      const every = Number(allowedData.repeatEvery !== undefined ? allowedData.repeatEvery : schedule.repeatEvery || 0);
+      const unit = allowedData.repeatUnit !== undefined ? allowedData.repeatUnit : schedule.repeatUnit || "hours";
+
+      if (!every || every <= 0 || !["minutes", "hours", "days"].includes(unit)) {
+        throw new AppError("ERR_INVALID_INTERVAL_SCHEDULE", 400);
+      }
+
+      const nextRunAt = calculateFirstIntervalRun({
+        startsAt: nextStartsAt,
+        scheduledAt: nextScheduledAt
+      });
+      allowedData.nextRunAt = nextRunAt;
+      allowedData.scheduledAt = nextRunAt;
+    } else if (allowedData.scheduledAt) {
+      allowedData.nextRunAt = allowedData.scheduledAt;
+    }
+  }
 
   if (schedule.status === "error" || schedule.status === "failed") allowedData.status = "scheduled";
   if (status !== undefined) {
@@ -360,6 +456,45 @@ export const executions = async (req: Request, res: Response): Promise<Response>
   });
 
   return res.json(logs);
+};
+
+export const duplicate = async (req: Request, res: Response): Promise<Response> => {
+  const { scheduleId } = req.params;
+  const schedule = await ScheduledMessage.findByPk(scheduleId);
+
+  if (!schedule) throw new AppError("ERR_SCHEDULE_NOT_FOUND", 404);
+
+  const clone = await ScheduledMessage.create({
+    contactId: schedule.contactId,
+    whatsappId: schedule.whatsappId,
+    batchId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    sequence: 0,
+    message: schedule.message,
+    mediaUrl: schedule.mediaUrl,
+    mediaType: schedule.mediaType,
+    mediaName: schedule.mediaName,
+    scheduledAt: schedule.scheduledAt,
+    nextRunAt: schedule.nextRunAt || schedule.scheduledAt,
+    intervalSeconds: schedule.intervalSeconds,
+    intervalPattern: schedule.intervalPattern,
+    pauseAfter: schedule.pauseAfter,
+    pauseSeconds: schedule.pauseSeconds,
+    recurrenceType: schedule.recurrenceType,
+    weekdays: schedule.weekdays || [],
+    times: schedule.times || [],
+    startsAt: schedule.startsAt,
+    endsAt: schedule.endsAt,
+    repeatEvery: schedule.repeatEvery,
+    repeatUnit: schedule.repeatUnit,
+    maxRuns: schedule.maxRuns,
+    runCount: 0,
+    respectBusinessHours: schedule.respectBusinessHours,
+    missedRunPolicy: schedule.missedRunPolicy,
+    status: "paused"
+  });
+
+  const created = await ScheduledMessage.findByPk(clone.id, { include });
+  return res.status(201).json(created);
 };
 
 export const remove = async (req: Request, res: Response): Promise<Response> => {

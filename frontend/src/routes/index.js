@@ -14,6 +14,7 @@ import Contacts from "../pages/Contacts/";
 import QuickAnswers from "../pages/QuickAnswers/";
 import Queues from "../pages/Queues/";
 import CampaignsSchedules from "../pages/CampaignsSchedules/";
+import Integrations from "../pages/Integrations/";
 import { AuthProvider } from "../context/Auth/AuthContext";
 import { WhatsAppsProvider } from "../context/WhatsApp/WhatsAppsContext";
 import { ThemeProvider } from "../context/DarkMode";
@@ -36,6 +37,7 @@ const Routes = () => {
                 <Route exact path="/users" component={Users} isPrivate />
                 <Route exact path="/quickAnswers" component={QuickAnswers} isPrivate />
                 <Route exact path="/settings" component={Settings} isPrivate />
+                <Route exact path="/integrations" component={Integrations} isPrivate requiredProfile="admin" />
                 <Route exact path="/queues" component={Queues} isPrivate />
                 <Route exact path="/campaigns-schedules" component={CampaignsSchedules} isPrivate />
               </LoggedInLayout>

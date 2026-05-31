@@ -195,7 +195,7 @@ function normalizeBody(resource: string, body: any): any {
       }
     }
 
-    if (action === "START_AI" && aiHumanHandoffEnabled) {
+    if (aiHumanHandoffEnabled) {
       if (!nullableNumber(data.aiHumanHandoffQueueId)) {
         throw new AppError("Escolha a fila humana para encaminhamento da IA.", 400);
       }
@@ -206,12 +206,12 @@ function normalizeBody(resource: string, body: any): any {
       );
     }
 
-    if (action === "START_AI" && aiHandoffAlertEnabled) {
+    if (aiHandoffAlertEnabled) {
       requireField(data.aiHandoffAlertTo, "Informe o numero ou grupo que recebera o aviso da IA.");
       requireField(data.aiHandoffAlertMessage, "Informe a mensagem do aviso da IA.");
     }
 
-    if (action === "START_AI" && aiAutoCloseEnabled) {
+    if (aiAutoCloseEnabled) {
       if (!data.aiAutoCloseMinutes || Number(data.aiAutoCloseMinutes) <= 0) {
         throw new AppError("Informe o tempo sem resposta para encerrar o atendimento.", 400);
       }

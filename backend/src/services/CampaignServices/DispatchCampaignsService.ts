@@ -30,6 +30,21 @@ const timeToDate = (base: Date, time: string): Date => {
 };
 
 const calculateNextRecurringRun = (schedule: ScheduledMessage, fromDate = new Date()): Date | null => {
+  if (schedule.recurrenceType === "interval") {
+    const every = Number(schedule.repeatEvery || 0);
+    const unit = schedule.repeatUnit || "hours";
+    if (!every || every <= 0) return null;
+
+    const next = new Date(fromDate);
+    if (unit === "minutes") next.setMinutes(next.getMinutes() + every);
+    else if (unit === "days") next.setDate(next.getDate() + every);
+    else next.setHours(next.getHours() + every);
+
+    if (schedule.endsAt && next.getTime() > schedule.endsAt.getTime()) return null;
+    if (schedule.maxRuns && schedule.runCount + 1 >= schedule.maxRuns) return null;
+    return next;
+  }
+
   if (schedule.recurrenceType !== "weekly") return null;
 
   const weekdays = Array.isArray(schedule.weekdays) ? schedule.weekdays.map(Number) : [];
@@ -209,6 +224,7 @@ const dispatchScheduledMessage = async (schedule: ScheduledMessage) => {
       sentAt: new Date(),
       lastRunAt: new Date(),
       nextRunAt: nextRecurringRun,
+      runCount: (schedule.runCount || 0) + 1,
       errorMessage: null
     });
 

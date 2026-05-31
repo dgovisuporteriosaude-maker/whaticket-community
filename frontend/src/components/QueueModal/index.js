@@ -16,6 +16,9 @@ import CircularProgress from "@material-ui/core/CircularProgress";
 import Switch from "@material-ui/core/Switch";
 import FormControlLabel from "@material-ui/core/FormControlLabel";
 import MenuItem from "@material-ui/core/MenuItem";
+import Grid from "@material-ui/core/Grid";
+import Checkbox from "@material-ui/core/Checkbox";
+import Typography from "@material-ui/core/Typography";
 
 import { i18n } from "../../translate/i18n";
 
@@ -25,6 +28,47 @@ import { IconButton, InputAdornment, Popover } from "@material-ui/core";
 import { Colorize } from "@material-ui/icons";
 import { GithubPicker } from "react-color";
 import MessageTemplateField from "../MessageTemplateField";
+
+const businessWeekdayOptions = [
+	{ value: 1, label: "Seg" },
+	{ value: 2, label: "Ter" },
+	{ value: 3, label: "Qua" },
+	{ value: 4, label: "Qui" },
+	{ value: 5, label: "Sex" },
+	{ value: 6, label: "Sab" },
+	{ value: 0, label: "Dom" },
+];
+
+const defaultBusinessHoursRule = () => ({
+	days: [1, 2, 3, 4, 5],
+	start: "08:00",
+	end: "18:00",
+});
+
+const parseBusinessHours = value => {
+	try {
+		const parsed = typeof value === "string" ? JSON.parse(value || "[]") : value;
+		if (!Array.isArray(parsed) || !parsed.length) return [defaultBusinessHoursRule()];
+		return parsed.map(rule => ({
+			days: Array.isArray(rule.days) ? rule.days.map(Number) : [],
+			start: rule.start || "08:00",
+			end: rule.end || "18:00",
+		}));
+	} catch (err) {
+		return [defaultBusinessHoursRule()];
+	}
+};
+
+const serializeBusinessHours = rules =>
+	JSON.stringify(
+		(rules || [])
+			.map(rule => ({
+				days: (rule.days || []).map(Number).sort(),
+				start: rule.start || "08:00",
+				end: rule.end || "18:00",
+			}))
+			.filter(rule => rule.days.length && rule.start && rule.end)
+	);
 
 const useStyles = makeStyles(theme => ({
 	root: {
@@ -77,8 +121,10 @@ const QueueModal = ({ open, onClose, queueId }) => {
 		color: "",
 		useAI: false,
 		aiSettingId: "",
+		businessHoursMode: "always",
 		businessHoursEnabled: false,
 		businessHours: "",
+		businessHoursRules: [defaultBusinessHoursRule()],
 		unavailableMessage: "",
 	};
 
@@ -117,7 +163,13 @@ const QueueModal = ({ open, onClose, queueId }) => {
 			try {
 				const { data } = await api.get(`/queue/${queueId}`);
 				setQueue(prevState => {
-					return { ...prevState, ...data, aiSettingId: data.aiSettingId || "" };
+					return {
+						...prevState,
+						...data,
+						aiSettingId: data.aiSettingId || "",
+						businessHoursMode: data.businessHoursMode || (data.businessHoursEnabled ? "custom" : "always"),
+						businessHoursRules: parseBusinessHours(data.businessHours),
+					};
 				});
 			} catch (err) {
 				toastError(err);
@@ -125,12 +177,7 @@ const QueueModal = ({ open, onClose, queueId }) => {
 		})();
 
 		return () => {
-			setQueue({
-				name: "",
-				color: "",
-				useAI: false,
-				aiSettingId: "",
-			});
+			setQueue(initialState);
 		};
 	}, [queueId, open]);
 
@@ -142,9 +189,13 @@ const QueueModal = ({ open, onClose, queueId }) => {
 
 	const handleSaveQueue = async values => {
 		try {
+			const { businessHoursRules, ...formValues } = values;
 			const queueData = {
-				...values,
+				...formValues,
 				aiSettingId: values.useAI && values.aiSettingId ? values.aiSettingId : null,
+				businessHoursMode: values.businessHoursMode || "always",
+				businessHoursEnabled: values.businessHoursMode !== "always",
+				businessHours: values.businessHoursMode === "custom" ? serializeBusinessHours(businessHoursRules) : "",
 			};
 			const payload = new FormData();
 			Object.entries(queueData).forEach(([key, value]) => {
@@ -287,30 +338,123 @@ const QueueModal = ({ open, onClose, queueId }) => {
 										</MenuItem>
 									))}
 								</Field>
-								<FormControlLabel
-									control={
-										<Field
-											as={Switch}
-											color="primary"
-											name="businessHoursEnabled"
-											checked={values.businessHoursEnabled}
-										/>
-									}
-									label="Ativar horario de funcionamento"
-								/>
-								{values.businessHoursEnabled && (
+								<Field
+									as={TextField}
+									select
+									fullWidth
+									label="Horario de funcionamento"
+									name="businessHoursMode"
+									variant="outlined"
+									margin="dense"
+								>
+									<MenuItem value="always">Sempre aberto</MenuItem>
+									<MenuItem value="company">Usar horario da empresa</MenuItem>
+									<MenuItem value="custom">Horario proprio desta fila</MenuItem>
+								</Field>
+								{values.businessHoursMode === "company" && (
+									<Typography variant="caption" color="textSecondary">
+										Esta fila seguira o horario configurado em Configuracoes &gt; Geral &gt; Horario de funcionamento da empresa.
+									</Typography>
+								)}
+								{values.businessHoursMode === "custom" && (
 									<>
-										<Field
-											as={TextField}
-											fullWidth
-											multiline
-											rows={4}
-											label="Horario de funcionamento"
-											name="businessHours"
+										<Typography variant="subtitle2" style={{ marginTop: 8 }}>
+											Horario proprio desta fila
+										</Typography>
+										<Typography variant="caption" color="textSecondary">
+											Configure um ou mais periodos. Fora desses horarios, o sistema envia a mensagem de indisponibilidade.
+										</Typography>
+										{(values.businessHoursRules || []).map((rule, index) => (
+											<div key={index} style={{ marginTop: 12, padding: 12, border: "1px solid #E2E8F0", borderRadius: 8 }}>
+												<Grid container spacing={1} alignItems="center">
+													<Grid item xs={12}>
+														<Typography variant="caption">Dias deste periodo</Typography>
+														<div>
+															{businessWeekdayOptions.map(day => (
+																<FormControlLabel
+																	key={day.value}
+																	control={
+																		<Checkbox
+																			color="primary"
+																			checked={(rule.days || []).map(Number).includes(day.value)}
+																			onChange={() => {
+																				const rules = [...values.businessHoursRules];
+																				const currentDays = (rules[index].days || []).map(Number);
+																				const exists = currentDays.includes(day.value);
+																				rules[index] = {
+																					...rules[index],
+																					days: exists
+																						? currentDays.filter(item => item !== day.value)
+																						: [...currentDays, day.value].sort()
+																				};
+																				setFieldValue("businessHoursRules", rules);
+																			}}
+																		/>
+																	}
+																	label={day.label}
+																/>
+															))}
+														</div>
+													</Grid>
+													<Grid item xs={12} sm={4}>
+														<TextField
+															fullWidth
+															type="time"
+															variant="outlined"
+															margin="dense"
+															label="Inicio"
+															value={rule.start}
+															onChange={event => {
+																const rules = [...values.businessHoursRules];
+																rules[index] = { ...rules[index], start: event.target.value };
+																setFieldValue("businessHoursRules", rules);
+															}}
+															InputLabelProps={{ shrink: true }}
+														/>
+													</Grid>
+													<Grid item xs={12} sm={4}>
+														<TextField
+															fullWidth
+															type="time"
+															variant="outlined"
+															margin="dense"
+															label="Fim"
+															value={rule.end}
+															onChange={event => {
+																const rules = [...values.businessHoursRules];
+																rules[index] = { ...rules[index], end: event.target.value };
+																setFieldValue("businessHoursRules", rules);
+															}}
+															InputLabelProps={{ shrink: true }}
+														/>
+													</Grid>
+													<Grid item xs={12} sm={4}>
+														<Button
+															fullWidth
+															variant="outlined"
+															color="secondary"
+															disabled={(values.businessHoursRules || []).length <= 1}
+															onClick={() => {
+																setFieldValue(
+																	"businessHoursRules",
+																	values.businessHoursRules.filter((_, ruleIndex) => ruleIndex !== index)
+																);
+															}}
+														>
+															Remover periodo
+														</Button>
+													</Grid>
+												</Grid>
+											</div>
+										))}
+										<Button
+											style={{ marginTop: 8 }}
 											variant="outlined"
-											margin="dense"
-											helperText={'Formato JSON. Ex: [{"days":[1,2,3,4,5],"start":"08:00","end":"18:00"}]. Domingo=0, Segunda=1.'}
-										/>
+											color="primary"
+											onClick={() => setFieldValue("businessHoursRules", [...(values.businessHoursRules || []), defaultBusinessHoursRule()])}
+										>
+											Adicionar periodo
+										</Button>
 										<MessageTemplateField
 											formik
 											label="Mensagem de indisponibilidade"

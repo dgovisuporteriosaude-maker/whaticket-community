@@ -62,6 +62,7 @@ interface Session extends Client {
 
 const sessions: Session[] = [];
 const intentionalDisconnects = new Set<number>();
+const pairingSessions = new Set<number>();
 
 const getWbot = (whatsappId: number): Session => {
   const sessionIndex = sessions.findIndex(s => s.id === whatsappId);
@@ -498,7 +499,10 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     const args: string = process.env.CHROME_ARGS || "";
 
     const wbot: Session = new Client({
-      authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}` }),
+      authStrategy: new LocalAuth({
+        clientId: `bd_${whatsapp.id}`,
+        dataPath: ".wwebjs_auth"
+      }),
       puppeteer: {
         // headless: false, // TODO make sure chromium closes on session disconnection / delete
         executablePath: process.env.CHROME_BIN || undefined,
@@ -535,6 +539,16 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     wbot.on("authenticated", async () => {
       logger.info(`Session: ${sessionName} AUTHENTICATED`);
+      pairingSessions.add(whatsapp.id);
+      await whatsapp.update({
+        status: "PAIRING",
+        qrcode: ""
+      });
+
+      io.emit("whatsappSession", {
+        action: "update",
+        session: whatsapp
+      });
     });
 
     wbot.on("auth_failure", async msg => {
@@ -559,6 +573,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     wbot.on("ready", async () => {
       logger.info(`Session: ${sessionName} READY`);
+      pairingSessions.delete(whatsapp.id);
 
       try {
         await whatsapp.update({
@@ -620,7 +635,17 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           return;
         }
 
-        await whatsapp.update({ status: "OPENING", session: "" });
+        const wasPairing = pairingSessions.has(whatsapp.id);
+        if (wasPairing) {
+          logger.warn(
+            `Session ${sessionName} disconnected during pairing. Waiting before retry...`
+          );
+        }
+
+        await whatsapp.update({
+          status: wasPairing ? "PAIRING" : "OPENING",
+          qrcode: wasPairing ? "" : whatsapp.qrcode
+        });
 
         io.emit("whatsappSession", {
           action: "update",
@@ -628,10 +653,10 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         });
 
         logger.warn(
-          `Session ${sessionName} disconnected. Restarting in 2 seconds...`
+          `Session ${sessionName} disconnected. Restarting in ${wasPairing ? 10 : 5} seconds...`
         );
 
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, wasPairing ? 10000 : 5000));
 
         init(whatsapp);
       } catch (err) {

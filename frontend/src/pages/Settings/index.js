@@ -36,6 +36,47 @@ import { i18n } from "../../translate/i18n.js";
 import toastError from "../../errors/toastError";
 import MessageTemplateField from "../../components/MessageTemplateField";
 
+const businessWeekdayOptions = [
+	{ value: 1, label: "Seg" },
+	{ value: 2, label: "Ter" },
+	{ value: 3, label: "Qua" },
+	{ value: 4, label: "Qui" },
+	{ value: 5, label: "Sex" },
+	{ value: 6, label: "Sab" },
+	{ value: 0, label: "Dom" },
+];
+
+const defaultBusinessHoursRule = () => ({
+	days: [1, 2, 3, 4, 5],
+	start: "08:00",
+	end: "18:00",
+});
+
+const parseBusinessHours = value => {
+	try {
+		const parsed = typeof value === "string" ? JSON.parse(value || "[]") : value;
+		if (!Array.isArray(parsed) || !parsed.length) return [defaultBusinessHoursRule()];
+		return parsed.map(rule => ({
+			days: Array.isArray(rule.days) ? rule.days.map(Number) : [],
+			start: rule.start || "08:00",
+			end: rule.end || "18:00",
+		}));
+	} catch (err) {
+		return [defaultBusinessHoursRule()];
+	}
+};
+
+const serializeBusinessHours = rules =>
+	JSON.stringify(
+		(rules || [])
+			.map(rule => ({
+				days: (rule.days || []).map(Number).sort(),
+				start: rule.start || "08:00",
+				end: rule.end || "18:00",
+			}))
+			.filter(rule => rule.days.length && rule.start && rule.end)
+	);
+
 const useStyles = makeStyles(theme => ({
 	root: {
 		flex: 1,
@@ -262,7 +303,7 @@ const resources = [
 				name: "aiHumanHandoffEnabled",
 				label: "Permitir que a IA chame atendente",
 				type: "boolean",
-				helperText: "Use quando esta opcao da URA acionar IA e a IA puder transferir o cliente para atendimento humano."
+				helperText: "Ao marcar, aparecem os campos de fila humana e mensagem de transferencia. Pode ser usado junto com aviso e encerramento automatico."
 			},
 			{
 				name: "aiHumanHandoffQueueId",
@@ -283,7 +324,7 @@ const resources = [
 				name: "aiAutoCloseEnabled",
 				label: "Ativar encerramento por inatividade",
 				type: "boolean",
-				helperText: "Use quando esta opcao da URA acionar IA e o atendimento puder ser encerrado se o cliente parar de responder."
+				helperText: "Ao marcar, aparecem os campos de tempo, mensagem e motivo de encerramento. Pode ser usado junto com encaminhamento e aviso."
 			},
 			{
 				name: "aiAutoCloseMinutes",
@@ -316,7 +357,7 @@ const resources = [
 				name: "aiHandoffAlertEnabled",
 				label: "Avisar outro WhatsApp quando a IA transferir",
 				type: "boolean",
-				helperText: "Use quando esta opção da URA acionar IA e você quiser avisar um número ou grupo específico ao transferir para atendente."
+				helperText: "Ao marcar, aparecem os campos do numero/grupo e da mensagem de aviso. Pode ser usado junto com encaminhamento e encerramento automatico."
 			},
 			{
 				name: "aiHandoffAlertTo",
@@ -427,6 +468,37 @@ const resources = [
 	}
 ];
 
+const getResourceByEndpoint = endpoint =>
+	resources.find(resource => resource.endpoint === endpoint);
+
+const groupedSettingsTabs = [
+	{ label: "Geral", type: "general" },
+	{ label: "Categorias", type: "resource", resource: getResourceByEndpoint("/ticket-categories") },
+	{ label: "Motivos de encerramento", type: "resource", resource: getResourceByEndpoint("/closing-reasons") },
+	{ label: "Pesquisa de satisfacao", type: "resource", resource: getResourceByEndpoint("/satisfaction-surveys") },
+	{ label: "Mensagens rapidas", type: "resource", resource: getResourceByEndpoint("/quickAnswers") },
+	{ label: "Etiquetas", type: "resource", resource: getResourceByEndpoint("/tags") },
+	{
+		label: "URA",
+		type: "group",
+		groupKey: "ura",
+		children: [
+			{ label: "Fluxos de URA", resource: getResourceByEndpoint("/ura-flows") },
+			{ label: "Opcoes de URA", resource: getResourceByEndpoint("/ura-options") }
+		]
+	},
+	{
+		label: "IA",
+		type: "group",
+		groupKey: "ia",
+		children: [
+			{ label: "Provedor de IA", resource: getResourceByEndpoint("/ai-settings") },
+			{ label: "Base de conhecimento", resource: getResourceByEndpoint("/knowledge-base") }
+		]
+	},
+	{ label: "Logs de auditoria", type: "resource", resource: getResourceByEndpoint("/audit-logs") }
+].filter(tab => tab.type === "general" || tab.resource || tab.children?.every(child => child.resource));
+
 const defaultModelsByProvider = {
 	openai: "gpt-4o-mini",
 	gemini: "gemini-2.5-flash",
@@ -501,6 +573,138 @@ const relationConfigs = {
 	}
 };
 
+const CompanyBusinessHours = ({ modeValue, rulesValue, messageValue, onChangeSetting }) => {
+	const [mode, setMode] = useState(modeValue || "always");
+	const [rules, setRules] = useState(parseBusinessHours(rulesValue));
+	const [message, setMessage] = useState(messageValue || "");
+
+	useEffect(() => {
+		setMode(modeValue || "always");
+		setRules(parseBusinessHours(rulesValue));
+		setMessage(messageValue || "");
+	}, [modeValue, rulesValue, messageValue]);
+
+	const save = async () => {
+		await onChangeSetting({ target: { name: "companyBusinessHoursMode", value: mode } });
+		await onChangeSetting({ target: { name: "companyBusinessHours", value: mode === "custom" ? serializeBusinessHours(rules) : "" } });
+		await onChangeSetting({ target: { name: "companyUnavailableMessage", value: message } });
+		toast.success("Horario de funcionamento salvo.");
+	};
+
+	return (
+		<Grid container spacing={2}>
+			<Grid item xs={12} sm={6}>
+				<TextField select fullWidth margin="dense" variant="outlined" label="Horario de funcionamento" value={mode} onChange={event => setMode(event.target.value)}>
+					<MenuItem value="always">Sempre aberto</MenuItem>
+					<MenuItem value="custom">Horario personalizado</MenuItem>
+				</TextField>
+			</Grid>
+			{mode === "custom" && (
+				<>
+					<Grid item xs={12}>
+						<Typography variant="subtitle2">Periodos de atendimento</Typography>
+						<Typography variant="caption" color="textSecondary">
+							Configure como no WhatsApp Business: dias da semana e periodos em que a empresa atende.
+						</Typography>
+					</Grid>
+					{rules.map((rule, index) => (
+						<Grid item xs={12} key={index}>
+							<div style={{ padding: 12, border: "1px solid #E2E8F0", borderRadius: 8 }}>
+								<Grid container spacing={1} alignItems="center">
+									<Grid item xs={12}>
+										{businessWeekdayOptions.map(day => (
+											<FormControlLabel
+												key={day.value}
+												control={
+													<Checkbox
+														color="primary"
+														checked={(rule.days || []).map(Number).includes(day.value)}
+														onChange={() => {
+															const nextRules = [...rules];
+															const currentDays = (nextRules[index].days || []).map(Number);
+															const exists = currentDays.includes(day.value);
+															nextRules[index] = {
+																...nextRules[index],
+																days: exists ? currentDays.filter(item => item !== day.value) : [...currentDays, day.value].sort()
+															};
+															setRules(nextRules);
+														}}
+													/>
+												}
+												label={day.label}
+											/>
+										))}
+									</Grid>
+									<Grid item xs={12} sm={4}>
+										<TextField
+											fullWidth
+											type="time"
+											variant="outlined"
+											margin="dense"
+											label="Inicio"
+											value={rule.start}
+											onChange={event => {
+												const nextRules = [...rules];
+												nextRules[index] = { ...nextRules[index], start: event.target.value };
+												setRules(nextRules);
+											}}
+											InputLabelProps={{ shrink: true }}
+										/>
+									</Grid>
+									<Grid item xs={12} sm={4}>
+										<TextField
+											fullWidth
+											type="time"
+											variant="outlined"
+											margin="dense"
+											label="Fim"
+											value={rule.end}
+											onChange={event => {
+												const nextRules = [...rules];
+												nextRules[index] = { ...nextRules[index], end: event.target.value };
+												setRules(nextRules);
+											}}
+											InputLabelProps={{ shrink: true }}
+										/>
+									</Grid>
+									<Grid item xs={12} sm={4}>
+										<Button fullWidth variant="outlined" color="secondary" disabled={rules.length <= 1} onClick={() => setRules(rules.filter((_, ruleIndex) => ruleIndex !== index))}>
+											Remover periodo
+										</Button>
+									</Grid>
+								</Grid>
+							</div>
+						</Grid>
+					))}
+					<Grid item xs={12}>
+						<Button variant="outlined" color="primary" onClick={() => setRules([...rules, defaultBusinessHoursRule()])}>
+							Adicionar periodo
+						</Button>
+					</Grid>
+					<Grid item xs={12}>
+						<TextField
+							fullWidth
+							multiline
+							rows={4}
+							margin="dense"
+							variant="outlined"
+							label="Mensagem de ausencia"
+							value={message}
+							onChange={event => setMessage(event.target.value)}
+							helperText="Esta mensagem pode ser usada pelas filas que escolherem seguir o horario da empresa."
+						/>
+					</Grid>
+				</>
+			)}
+			<Grid item xs={12}>
+				<Button color="primary" variant="contained" onClick={save}>
+					Salvar horario da empresa
+				</Button>
+			</Grid>
+		</Grid>
+	);
+};
+
 const getField = (resource, name) => {
 	return resource.fields.find(field => field.name === name);
 };
@@ -515,15 +719,15 @@ const shouldShowField = (field, form) => {
 	if (typeof field.showWhen === "function") return field.showWhen(form);
 
 	if (["aiHumanHandoffQueueId", "aiHumanHandoffMessage"].includes(field.name)) {
-		return form.action === "START_AI" && !!form.aiHumanHandoffEnabled;
+		return !!form.aiHumanHandoffEnabled;
 	}
 
 	if (["aiAutoCloseMinutes", "aiAutoCloseMessage", "aiAutoCloseReasonId", "aiAutoCloseOnlyIfNotHandedOff"].includes(field.name)) {
-		return form.action === "START_AI" && !!form.aiAutoCloseEnabled;
+		return !!form.aiAutoCloseEnabled;
 	}
 
 	if (["aiHandoffAlertTo", "aiHandoffAlertMessage"].includes(field.name)) {
-		return form.action === "START_AI" && !!form.aiHandoffAlertEnabled;
+		return !!form.aiHandoffAlertEnabled;
 	}
 
 	return true;
@@ -762,6 +966,18 @@ const GeneralSettings = ({
 					</Typography>
 				</Grid>
 			</Grid>
+		</Paper>
+
+		<Typography variant="subtitle1" gutterBottom>
+			Horario de funcionamento da empresa
+		</Typography>
+		<Paper className={classes.generalPaper}>
+			<CompanyBusinessHours
+				modeValue={getSettingValue("companyBusinessHoursMode")}
+				rulesValue={getSettingValue("companyBusinessHours")}
+				messageValue={getSettingValue("companyUnavailableMessage")}
+				onChangeSetting={onChangeSetting}
+			/>
 		</Paper>
 
 		<Typography variant="subtitle1" gutterBottom>
@@ -1278,6 +1494,7 @@ const Settings = () => {
 
 	const [settings, setSettings] = useState([]);
 	const [tab, setTab] = useState(0);
+	const [groupTabs, setGroupTabs] = useState({ ura: 0, ia: 0 });
 
 	useEffect(() => {
 		const fetchSession = async () => {
@@ -1351,6 +1568,11 @@ const Settings = () => {
 		return setting ? setting.value : "";
 	};
 
+	const activeTab = groupedSettingsTabs[tab] || groupedSettingsTabs[0];
+	const activeGroupIndex = activeTab?.type === "group" ? groupTabs[activeTab.groupKey] || 0 : 0;
+	const activeGroupChild = activeTab?.type === "group" ? activeTab.children[activeGroupIndex] : null;
+	const activeResource = activeTab?.type === "resource" ? activeTab.resource : activeGroupChild?.resource;
+
 	return (
 		<Container maxWidth={false} className={classes.root}>
 			<div className={classes.pageHeader}>
@@ -1370,14 +1592,13 @@ const Settings = () => {
 				variant="scrollable"
 				scrollButtons="auto"
 			>
-				<Tab label="Geral" />
-				{resources.map(item => (
-					<Tab key={item.endpoint} label={item.label} />
+				{groupedSettingsTabs.map(item => (
+					<Tab key={item.label} label={item.label} />
 				))}
 			</Tabs>
 
 			<Paper className={classes.contentPaper} variant="outlined">
-				{tab === 0 ? (
+				{activeTab.type === "general" ? (
 					<GeneralSettings
 						settings={settings}
 						onChangeSetting={handleChangeSetting}
@@ -1385,8 +1606,27 @@ const Settings = () => {
 						onUploadLogo={handleUploadLogo}
 						classes={classes}
 					/>
+				) : activeTab.type === "group" ? (
+					<>
+						<Tabs
+							value={activeGroupIndex}
+							indicatorColor="primary"
+							textColor="primary"
+							onChange={(event, value) => {
+								setGroupTabs(prev => ({ ...prev, [activeTab.groupKey]: value }));
+							}}
+							className={classes.tabs}
+							variant="scrollable"
+							scrollButtons="auto"
+						>
+							{activeTab.children.map(child => (
+								<Tab key={child.label} label={child.label} />
+							))}
+						</Tabs>
+						<ResourcePanel resource={activeResource} classes={classes} />
+					</>
 				) : (
-					<ResourcePanel resource={resources[tab - 1]} classes={classes} />
+					<ResourcePanel resource={activeResource} classes={classes} />
 				)}
 			</Paper>
 		</Container>
@@ -1394,3 +1634,4 @@ const Settings = () => {
 };
 
 export default Settings;
+
